@@ -52,7 +52,9 @@ void print_roll_pitch() {
   
   // read raw accl measurements from device
   int rawXAcc, rawYAcc, rawZAcc; // x, y, z
+  SPI.beginTransaction(bmi160_settings);
   BMI160.readAccelerometer(rawXAcc, rawYAcc, rawZAcc);
+  SPI.endTransaction();
   float accX = convertRawAccel(rawXAcc);
   float accY = convertRawAccel(rawYAcc);
   float accZ = convertRawAccel(rawZAcc);
@@ -64,7 +66,9 @@ void print_roll_pitch() {
   float accl_pitch = rad_to_deg(rad_a_pitch);
 
   int rawRoll, rawPitch, rawYaw;
+  SPI.beginTransaction(bmi160_settings);
   BMI160.readGyro(rawRoll, rawPitch, rawYaw);
+  SPI.endTransaction();
   float omega_roll  = convertRawGyro(rawRoll);
   float omega_pitch = convertRawGyro(rawPitch);
   float omega_yaw   = convertRawGyro(rawYaw);
