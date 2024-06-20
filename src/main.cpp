@@ -22,6 +22,8 @@
 #define INFO_TO_CONTROL_STATION_INTERVAL 600
 #define DISPLAY_INTERVAL 1000
 
+#define PA_TO_HPA 0.01
+
 #define GPS_TX_PIN 28
 #define GPS_RX_PIN 29
 #define GPS_SERIAL Serial7
@@ -30,7 +32,10 @@
 #define FS_IA6_RX_PIN 35
 #define FS_IA6 Serial8
 
+int sensorsTurn = 0;
+
 TinyGPSPlus gps;
+double lat, lng;
 
 MechaQMC5883 qmc;
 
@@ -41,6 +46,8 @@ HTU21D htu;
 Adafruit_BMP280 bmp;
 
 double temperature, pressure, old_pressure = 0, humidity, delta_pressure, delta_pressure_old = 0, air_density;
+double groundLevelPressureHPa;
+double altitude = 0;
 
 void setup() {
   Serial.begin(6000000);
@@ -151,8 +158,18 @@ void setup() {
                   Adafruit_BMP280::STANDBY_MS_1);   /* Standby time. */
   Serial.println("Initialized BMP180!");
 
+  double pressure_sum = 0;
+  for (int i = 0 ; i < 5 ; i++) {
+    pressure_sum += bmp.readPressure();
+    delay(100);
+  }
+  groundLevelPressureHPa = pressure_sum / 5.0 * PA_TO_HPA;
+
+  calculateAzimuth();
+  firstAzimuth = azimuth;
+
   displayBigMessage("Finished Initializing");
-  delay(1000);
+  delay(2000);
 }
 
 void loop() {
@@ -165,11 +182,13 @@ void loop() {
     }
 
     if (gps.location.isUpdated()) {
-    Serial.print("Latitude: ");
-    Serial.println(gps.location.lat(), 6);
-    Serial.print("Longitude: ");
-    Serial.println(gps.location.lng(), 6);
-  }
+      lat = gps.location.lat();
+      lng = gps.location.lng();
+      Serial.print("Latitude: ");
+      Serial.println(lat, 6);
+      Serial.print("Longitude: ");
+      Serial.println(lng, 6);
+    }
 
     double sum = 0;
     const int samples = 10;
@@ -194,12 +213,14 @@ void loop() {
     old_pressure = pressure;
     temperature = bmp.readTemperature();
     air_density = densityhumidair(pressure, temperature, humidity / 100);
+    altitude = bmp.readAltitude(groundLevelPressureHPa);
     Serial.printf("%.2f delta pres, Humidity: %.2f, Temperature: %.2f, Pressure: %.2f, Air Density: %.3f kg/m^3, air speed: %.2f m/s, altitude: %.2f\n",
-     delta_pressure, humidity, temperature, pressure, air_density, pow((2 * abs(delta_pressure)) / air_density, 0.5), bmp.readAltitude(ANKARA_PRESSURE));
-    displaySensorData(temperature, humidity, pressure, azimuth, true, gps.location.lat(), gps.location.lng());
+     delta_pressure, humidity, temperature, pressure, air_density, pow((2 * abs(delta_pressure)) / air_density, 0.5), altitude);
+    displaySensorData(temperature, humidity, pressure, azimuth, true, lat, lng);
+    calculateAzimuth();
   }
 
-  print_roll_pitch();
+  calculateRollPitch();
   Serial.print(millis() - start);
   Serial.println(" ms");
 

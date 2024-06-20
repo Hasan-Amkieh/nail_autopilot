@@ -25,6 +25,12 @@ static uint32_t last_micros = 0;
 Kalman kalmanRoll;
 Kalman kalmanPitch;
 
+float kalm_roll;
+float kalm_pitch;
+
+float firstAzimuth = 0;
+float yaw;
+
 float azimuth = 0, old_azimuth;
 float mag_x_hor = 0, mag_y_hor = 0;
 
@@ -48,7 +54,7 @@ float convertRawAccel(int aRaw) {
   return aRaw / lsb_g;
 }
 
-void print_roll_pitch() {
+void calculateRollPitch() {
   
   // read raw accl measurements from device
   int rawXAcc, rawYAcc, rawZAcc; // x, y, z
@@ -83,8 +89,12 @@ void print_roll_pitch() {
   gyro_pitch += omega_pitch * dt;
   gyro_yaw   += omega_yaw   * dt;
   
-  float kalm_roll  = kalmanRoll.getAngle(accl_roll, omega_roll, dt);
-  float kalm_pitch = kalmanPitch.getAngle(accl_pitch, omega_pitch, dt);
+  kalm_roll  = kalmanRoll.getAngle(accl_roll, omega_roll, dt);
+  kalm_pitch = kalmanPitch.getAngle(accl_pitch, omega_pitch, dt);
+
+}
+
+void calculateAzimuth() {
 
   int16_t raw_x = 0, raw_y = 0, raw_z = 0;
 
@@ -121,11 +131,6 @@ void print_roll_pitch() {
   azimuth += ANKARA_DECLINATION + 90.0;
   azimuth = azimuth < 0 ? 360 + azimuth : azimuth;
 
-  Serial.print(kalm_roll);
-  Serial.print("/");
-  Serial.print(kalm_pitch);
-  Serial.print("/");
-  Serial.print(azimuth);
+  yaw = abs(firstAzimuth - azimuth);
 
-  Serial.println();
 }

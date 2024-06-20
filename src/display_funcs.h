@@ -28,15 +28,22 @@ void displaySensorData(float temp, float hum, float pressure, float azimuth, boo
   u8g2.print("  ");
   u8g2.print(lng, 6);
   
-  u8g2.setCursor(0, 42);
+  u8g2.setCursor(0, 40);
   u8g2.print("Controller: ");
   u8g2.println(isControllerArmed ? "Armed" : "Not Armed");
   
-  u8g2.setCursor(0, 52);
+  u8g2.setCursor(0, 50);
   u8g2.print("Azimuth: ");
   u8g2.print(azimuth, 2);
   u8g2.setFont(u8g_font_courB10);
   u8g2.print("\xb0");
+
+   u8g2.setFont(u8g2_font_profont10_mr);
+  u8g2.setCursor(0, 58);
+  u8g2.print("roll ");
+  u8g2.print(kalm_roll, 2);
+  u8g2.print(" pitch ");
+  u8g2.print(kalm_pitch, 2);
   
   u8g2.sendBuffer(); // Transfer internal memory to the display
 }
@@ -68,7 +75,6 @@ void displayError(String error) {
 
 }
 
-// display a string on multiple lines, keeping words intact where possible
 void printTextOverflow(const char *msg, int xloc, int yloc) {
 
    int dspwidth = u8g2.getDisplayWidth();                        // display width in pixels
