@@ -10,6 +10,8 @@
 #include <imu_funcs.h>
 #include <display_funcs.h>
 #include <air_speed_funcs.h>
+#include <SoftwareSerial.h>
+#include <TinyGPS++.h>
 
 #define ANKARA_PRESSURE 938 // meters from the sea in Ankara
 
@@ -20,20 +22,30 @@
 #define INFO_TO_CONTROL_STATION_INTERVAL 600
 #define DISPLAY_INTERVAL 1000
 
+#define GPS_TX_PIN 28
+#define GPS_RX_PIN 29
+#define GPS_SERIAL Serial7
+
+#define FS_IA6_TX_PIN 34
+#define FS_IA6_RX_PIN 35
+#define FS_IA6 Serial8
+
+TinyGPSPlus gps;
+
 MechaQMC5883 qmc;
 
 bfs::Ms4525do airSpeedSensor;
-const int diff_pres_offset = 115; // in pascals
-const float avg_diff_pres_offset = 20.5; // in pascals
+const float avg_diff_pres_offset = 128; // in pascals
 
 HTU21D htu;
 Adafruit_BMP280 bmp;
 
-double temperature, pressure, old_pressure = 0, humidity, delta_pressure, air_density;
+double temperature, pressure, old_pressure = 0, humidity, delta_pressure, delta_pressure_old = 0, air_density;
 
 void setup() {
   Serial.begin(6000000);
-  while(!Serial) ;
+  uint32_t startTime = millis();
+  while(!Serial && (millis() - startTime < 1500)) ;
 
   Wire.begin();
   Wire.setClock(400000);
@@ -45,6 +57,9 @@ void setup() {
   u8g2.enableUTF8Print();
   Serial.println("U8g2 is initialized!");
   displayBigMessage("...Initializing...");
+
+  GPS_SERIAL.begin(9600);
+  delay(10);
 
   uint8_t qmc_sense_rate;
   switch (MAG_SENSE_RATE)
@@ -144,16 +159,29 @@ void loop() {
   auto start = millis();
   
   if (true) {
+    Serial.printf("Received %d bytes from GPS\n", GPS_SERIAL.available());
+    while (GPS_SERIAL.available() > 0) {
+      gps.encode(GPS_SERIAL.read());
+    }
+
+    if (gps.location.isUpdated()) {
+    Serial.print("Latitude: ");
+    Serial.println(gps.location.lat(), 6);
+    Serial.print("Longitude: ");
+    Serial.println(gps.location.lng(), 6);
+  }
+
     double sum = 0;
     const int samples = 10;
     double last = 0;
     for (int i = 0 ; i < samples ; i++) {
       if (airSpeedSensor.Read()) {
-        last = airSpeedSensor.pres_pa() + diff_pres_offset;
+        last = airSpeedSensor.pres_pa();
       }
       sum += last;
     }
-    delta_pressure = sum / samples + avg_diff_pres_offset;
+    delta_pressure = low_pass_filter(delta_pressure_old, sum / samples + avg_diff_pres_offset);
+    delta_pressure_old = delta_pressure;
     if (delta_pressure > 0) {
       delta_pressure = 0;
     }
@@ -168,7 +196,7 @@ void loop() {
     air_density = densityhumidair(pressure, temperature, humidity / 100);
     Serial.printf("%.2f delta pres, Humidity: %.2f, Temperature: %.2f, Pressure: %.2f, Air Density: %.3f kg/m^3, air speed: %.2f m/s, altitude: %.2f\n",
      delta_pressure, humidity, temperature, pressure, air_density, pow((2 * abs(delta_pressure)) / air_density, 0.5), bmp.readAltitude(ANKARA_PRESSURE));
-    displaySensorData(temperature, humidity, pressure, azimuth, true, true);
+    displaySensorData(temperature, humidity, pressure, azimuth, true, gps.location.lat(), gps.location.lng());
   }
 
   print_roll_pitch();
