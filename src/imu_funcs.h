@@ -19,7 +19,6 @@
 const SPISettings bmi160_settings = SPISettings(1000000, MSBFIRST, SPI_MODE0);
 
 static float gyro_roll = 0, gyro_pitch = 0, gyro_yaw = 0;
-static float comp_roll = 0, comp_pitch = 0;
 static uint32_t last_micros = 0;
 
 Kalman kalmanRoll;
@@ -83,7 +82,7 @@ void calculateRollPitch() {
   uint32_t duration = cur_micros - last_micros;
   last_micros = cur_micros;
   double dt = duration / 1000000.0; // us->s
-  Serial.printf("dt: %.3f\n", dt);
+  //Serial.printf("dt: %.3f\n", dt);
 
   gyro_roll  += omega_roll  * dt; 
   gyro_pitch += omega_pitch * dt;

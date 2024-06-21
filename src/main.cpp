@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include "ms4525do.h"
-#include <Adafruit_BMP280.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -12,17 +11,12 @@
 #include <air_speed_funcs.h>
 #include <SoftwareSerial.h>
 #include <TinyGPS++.h>
+#include <bmp180_funcs.h>
 
 #define ANKARA_PRESSURE 938 // meters from the sea in Ankara
 
-// TODO: Delete them as I am applying the new system:
-#define HUMIDITY_PRESSURE_INTERVAL 500
-#define AIRSPEED_INTERVAL 500
-#define MAG_INTERVAL 500
-#define INFO_TO_CONTROL_STATION_INTERVAL 600
-#define DISPLAY_INTERVAL 1000
-
 #define PA_TO_HPA 0.01
+#define MB_TO_PA 100
 
 #define GPS_TX_PIN 28
 #define GPS_RX_PIN 29
@@ -43,11 +37,10 @@ bfs::Ms4525do airSpeedSensor;
 const float avg_diff_pres_offset = 128; // in pascals
 
 HTU21D htu;
-Adafruit_BMP280 bmp;
 
-double temperature, pressure, old_pressure = 0, humidity, delta_pressure, delta_pressure_old = 0, air_density;
-double groundLevelPressureHPa;
-double altitude = 0;
+double temperature, humidity, delta_pressure, delta_pressure_old = 0, air_density;
+
+bool isFlying = false;
 
 void setup() {
   Serial.begin(6000000);
@@ -145,25 +138,12 @@ void setup() {
   htu.setResolution(HTU21DResolution::RESOLUTION_RH8_T12);
   Serial.println("Initialized HTU21D!");
 
-  bmp = Adafruit_BMP280(&Wire);
-  if (!bmp.begin(0x76, 0x58)) {
+  if (!bmp.begin()) {
     Serial.println("Couldn't find BMP180!");
     displayError("Couldn't find BMP180!");
     while (1);
   }
-  bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,     /* Operating Mode. */
-                  Adafruit_BMP280::SAMPLING_X1,     /* Temp. oversampling */
-                  Adafruit_BMP280::SAMPLING_X16,    /* Pressure oversampling */
-                  Adafruit_BMP280::FILTER_X16,      /* Filtering. */
-                  Adafruit_BMP280::STANDBY_MS_1);   /* Standby time. */
   Serial.println("Initialized BMP180!");
-
-  double pressure_sum = 0;
-  for (int i = 0 ; i < 5 ; i++) {
-    pressure_sum += bmp.readPressure();
-    delay(100);
-  }
-  groundLevelPressureHPa = pressure_sum / 5.0 * PA_TO_HPA;
 
   calculateAzimuth();
   firstAzimuth = azimuth;
@@ -175,49 +155,57 @@ void setup() {
 void loop() {
   auto start = millis();
   
-  if (true) {
-    Serial.printf("Received %d bytes from GPS\n", GPS_SERIAL.available());
-    while (GPS_SERIAL.available() > 0) {
-      gps.encode(GPS_SERIAL.read());
-    }
-
-    if (gps.location.isUpdated()) {
-      lat = gps.location.lat();
-      lng = gps.location.lng();
-      Serial.print("Latitude: ");
-      Serial.println(lat, 6);
-      Serial.print("Longitude: ");
-      Serial.println(lng, 6);
-    }
-
-    double sum = 0;
-    const int samples = 10;
-    double last = 0;
-    for (int i = 0 ; i < samples ; i++) {
-      if (airSpeedSensor.Read()) {
-        last = airSpeedSensor.pres_pa();
+  double delat_pressure_sum = 0;
+  double last_diff_pres = 0;
+  switch (sensorsTurn) {
+    case 0: // GPS
+      Serial.printf("Received %d bytes from GPS\n", GPS_SERIAL.available());
+      while (GPS_SERIAL.available() > 0) {
+        gps.encode(GPS_SERIAL.read());
       }
-      sum += last;
-    }
-    delta_pressure = low_pass_filter(delta_pressure_old, sum / samples + avg_diff_pres_offset);
-    delta_pressure_old = delta_pressure;
-    if (delta_pressure > 0) {
-      delta_pressure = 0;
-    }
-
-    if (!htu.measure()) {
-      Serial.println("WARNING: Unable to measure the humidity!");
-    }
-    humidity = htu.getHumidity();
-    pressure = low_pass_filter(old_pressure, bmp.readPressure());
-    old_pressure = pressure;
-    temperature = bmp.readTemperature();
-    air_density = densityhumidair(pressure, temperature, humidity / 100);
-    altitude = bmp.readAltitude(groundLevelPressureHPa);
-    Serial.printf("%.2f delta pres, Humidity: %.2f, Temperature: %.2f, Pressure: %.2f, Air Density: %.3f kg/m^3, air speed: %.2f m/s, altitude: %.2f\n",
-     delta_pressure, humidity, temperature, pressure, air_density, pow((2 * abs(delta_pressure)) / air_density, 0.5), altitude);
-    displaySensorData(temperature, humidity, pressure, azimuth, true, lat, lng);
-    calculateAzimuth();
+      if (gps.location.isUpdated()) {
+        lat = gps.location.lat();
+        lng = gps.location.lng();
+        Serial.print("Latitude: ");
+        Serial.println(lat, 6);
+        Serial.print("Longitude: ");
+        Serial.println(lng, 6);
+      }
+      break;
+    case 1: // Humidity
+      if (!htu.measure()) {
+        Serial.println("WARNING: Unable to measure the humidity!");
+      }
+      humidity = htu.getHumidity();
+      break;
+    case 2: // Temperature & pressure
+      calculatePressureAndAltitude();
+      temperature = T;
+      air_density = densityhumidair(pressure_mb * MB_TO_PA, temperature, humidity / 100);
+      break;
+    case 3: // Airspeed sensor & calculation
+      for (int i = 0 ; i < 10 ; i++) {
+        if (airSpeedSensor.Read()) {
+          last_diff_pres = airSpeedSensor.pres_pa();
+        }
+        delat_pressure_sum += last_diff_pres;
+      }
+      delta_pressure = low_pass_filter(delta_pressure_old, delat_pressure_sum / 10 + avg_diff_pres_offset);
+      delta_pressure_old = delta_pressure;
+      if (delta_pressure > 0) {
+        delta_pressure = 0;
+      }
+      Serial.printf("%.2f delta pres, Humidity: %.2f, Temperature: %.2f, Pressure: %.2f, Air Density: %.3f kg/m^3, air speed: %.2f m/s, altitude: %.2f\n",
+       delta_pressure, humidity, temperature, pressure_mb * MB_TO_PA, air_density, pow((2 * abs(delta_pressure)) / air_density, 0.5), altitude);
+      break;
+    case 4: // Display update & azimuth calculation
+      calculateAzimuth();
+      if (!isFlying) displaySensorData(temperature, humidity, pressure_mb * MB_TO_PA, azimuth, true, lat, lng);
+      break;
+  }
+  sensorsTurn++;
+  if (sensorsTurn == 7) {
+    sensorsTurn = 0;
   }
 
   calculateRollPitch();
