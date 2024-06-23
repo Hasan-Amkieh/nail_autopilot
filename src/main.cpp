@@ -12,6 +12,10 @@
 #include <SoftwareSerial.h>
 #include <TinyGPS++.h>
 #include <bmp180_funcs.h>
+#include <surface_control_funcs.h>
+#include <mode_controls.h>
+#include <CircularBuffer.hpp>
+#include <IntervalTimer.h>
 
 #define ANKARA_PRESSURE 938 // meters from the sea in Ankara
 
@@ -22,9 +26,12 @@
 #define GPS_RX_PIN 29
 #define GPS_SERIAL Serial7
 
-#define FS_IA6_TX_PIN 34
-#define FS_IA6_RX_PIN 35
-#define FS_IA6 Serial8
+#define FS_IA6_TX_PIN 16
+#define FS_IA6_RX_PIN 17
+#define FS_IA6_SERIAL Serial4
+#define FS_IA6_SERIAL_BUFFER_SIZE 256
+
+CircularBuffer<uint8_t, FS_IA6_SERIAL_BUFFER_SIZE> radioBuffer;
 
 int sensorsTurn = 0;
 
@@ -40,7 +47,15 @@ HTU21D htu;
 
 double temperature, humidity, delta_pressure, delta_pressure_old = 0, air_density;
 
-bool isFlying = false;
+#define IBUS_BUFFSIZE 32    
+#define IBUS_MAXCHANNELS 6
+
+static uint8_t ibusIndex = 0;
+static uint8_t ibus[IBUS_BUFFSIZE] = {0};
+static uint16_t radioValues[IBUS_MAXCHANNELS];
+IntervalTimer radioControllerTimer;
+void radioControllerRead();
+void processRadioController();
 
 void setup() {
   Serial.begin(6000000);
@@ -57,6 +72,22 @@ void setup() {
   u8g2.enableUTF8Print();
   Serial.println("U8g2 is initialized!");
   displayBigMessage("...Initializing...");
+
+  FS_IA6_SERIAL.begin(115200);
+
+  rightWing.attach(RIGHT_WING_SERVO_PIN);
+  rightWing.write(DEFAULT_SERVO_POS);
+
+  leftWing.attach(RIGHT_WING_SERVO_PIN);
+  leftWing.write(DEFAULT_SERVO_POS);
+
+  rightElevator.attach(RIGHT_WING_SERVO_PIN);
+  rightElevator.write(DEFAULT_SERVO_POS);
+
+  leftElevator.attach(RIGHT_WING_SERVO_PIN);
+  leftElevator.write(DEFAULT_SERVO_POS);
+
+  testAllServoMotors();
 
   GPS_SERIAL.begin(9600);
   delay(10);
@@ -150,6 +181,14 @@ void setup() {
 
   displayBigMessage("Finished Initializing");
   delay(2000);
+
+  FS_IA6_SERIAL.clear();
+  if (!radioControllerTimer.begin(radioControllerRead, 10000)) {
+    Serial.println("Unable to set up a timer for radio controller interrupt!");
+    displayError("Unable to set up a timer for radio controller interrupt!");
+    while (1);
+  } 
+  lastRadioPacket = millis();
 }
 
 void loop() {
@@ -157,21 +196,22 @@ void loop() {
   
   double delat_pressure_sum = 0;
   double last_diff_pres = 0;
-  switch (sensorsTurn) {
-    case 0: // GPS
-      Serial.printf("Received %d bytes from GPS\n", GPS_SERIAL.available());
-      while (GPS_SERIAL.available() > 0) {
-        gps.encode(GPS_SERIAL.read());
-      }
-      if (gps.location.isUpdated()) {
-        lat = gps.location.lat();
-        lng = gps.location.lng();
-        Serial.print("Latitude: ");
-        Serial.println(lat, 6);
-        Serial.print("Longitude: ");
-        Serial.println(lng, 6);
-      }
-      break;
+  if (uav_mode == UAV_MODES::idle) {
+    switch (sensorsTurn) {
+      case 0: // GPS
+        //Serial.printf("Received %d bytes from GPS\n", GPS_SERIAL.available());
+        while (GPS_SERIAL.available() > 0) {
+          gps.encode(GPS_SERIAL.read());
+        }
+        if (gps.location.isUpdated()) {
+          lat = gps.location.lat();
+          lng = gps.location.lng();
+          Serial.print("Latitude: ");
+          Serial.println(lat, 6);
+          Serial.print("Longitude: ");
+          Serial.println(lng, 6);
+        }
+        break;
     case 1: // Humidity
       if (!htu.measure()) {
         Serial.println("WARNING: Unable to measure the humidity!");
@@ -200,8 +240,15 @@ void loop() {
       break;
     case 4: // Display update & azimuth calculation
       calculateAzimuth();
-      if (!isFlying) displaySensorData(temperature, humidity, pressure_mb * MB_TO_PA, azimuth, true, lat, lng);
+      displaySensorData(temperature, humidity, pressure_mb * MB_TO_PA, azimuth, true, lat, lng);
       break;
+    }
+  } else if (uav_mode == UAV_MODES::vtol) {
+    ;
+  } else if (uav_mode == UAV_MODES::fixed_wing) {
+    ;
+  } else if (uav_mode == UAV_MODES::failsafe) {
+    // do nothing!
   }
   sensorsTurn++;
   if (sensorsTurn == 7) {
@@ -209,8 +256,51 @@ void loop() {
   }
 
   calculateRollPitch();
+
   Serial.print(millis() - start);
   Serial.println(" ms");
 
-  delay(100);
+  processRadioController();
+}
+
+void radioControllerRead() {
+  while (FS_IA6_SERIAL.available()) {
+    radioBuffer.push(FS_IA6_SERIAL.read());
+  }
+}
+
+void processRadioController() {
+  while (radioBuffer.size() >= IBUS_BUFFSIZE) {
+    uint8_t val = radioBuffer.shift();
+    if (ibusIndex == 0 && val != 0x20) {
+      ibusIndex = 0;
+      break;
+    }
+    if (ibusIndex == 1 && val != 0x40) {
+      ibusIndex = 0;
+      break;
+    }
+
+    if (ibusIndex == IBUS_BUFFSIZE) {
+      ibusIndex = 0;
+      int high=3;
+      int low=2;
+      for(int i=0;i<IBUS_MAXCHANNELS; i++) {
+        radioValues[i] = (ibus[high] << 8) + ibus[low];
+        high += 2;
+        low += 2;
+      }
+      lastRadioPacket = millis();
+      Serial.printf("%d, %d, %d, %d, %d, %d\n", radioValues[0], radioValues[1], radioValues[2], radioValues[3] ,radioValues[4], radioValues[5]);
+    }
+    else {
+      ibus[ibusIndex] = val;
+      ibusIndex++;
+    }
+  }
+  if (!isRadioRunning(radioValues)) {
+    switchToFailSafe();
+  } else {
+    exitFailSafeMode();
+  }
 }
