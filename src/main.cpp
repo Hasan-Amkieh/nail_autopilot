@@ -16,6 +16,10 @@
 #include <mode_controls.h>
 #include <CircularBuffer.hpp>
 #include <IntervalTimer.h>
+#include <SD.h>
+#include <iostream>
+#include <sstream>
+#include <string>
 
 #define ANKARA_PRESSURE 938 // meters from the sea in Ankara
 
@@ -45,7 +49,8 @@ const float avg_diff_pres_offset = 128; // in pascals
 
 HTU21D htu;
 
-double temperature, humidity, delta_pressure, delta_pressure_old = 0, air_density;
+double temperature, humidity, delta_pressure, delta_pressure_old = 0, air_density, air_speed;
+float batt_voltages[4] = {0};
 
 #define IBUS_BUFFSIZE 32    
 #define IBUS_MAXCHANNELS 6
@@ -56,6 +61,8 @@ static uint16_t radioValues[IBUS_MAXCHANNELS];
 IntervalTimer radioControllerTimer;
 void radioControllerRead();
 void processRadioController();
+
+File sensorsFile;
 
 void setup() {
   Serial.begin(6000000);
@@ -179,15 +186,40 @@ void setup() {
   calculateAzimuth();
   firstAzimuth = azimuth;
 
-  displayBigMessage("Finished Initializing");
-  delay(2000);
+  if (!SD.begin(BUILTIN_SDCARD)) {
+    Serial.println("The SD card is not inserted or burned!");
+    displayError("Unable to read SD card!");
+    while (1) ;
+  }
 
-  FS_IA6_SERIAL.clear();
+  int sensors_file_name_index = 0;
+  do {
+    std::ostringstream filepath;
+    filepath << "sensrs-" << sensors_file_name_index << ".txt";
+    if (!SD.exists(filepath.str().c_str())) {
+      sensorsFile = SD.open(filepath.str().c_str(), FILE_WRITE);
+      break;
+    }
+    sensors_file_name_index++;
+  } while(true);
+  if (!sensorsFile) {
+    Serial.println("Couldn't open the sensors file for writing!");
+    displayError("Couldn't open the sensors file!");
+    while (1) ;
+  }
+  Serial.println("Initialized the SD card!");
+
   if (!radioControllerTimer.begin(radioControllerRead, 10000)) {
     Serial.println("Unable to set up a timer for radio controller interrupt!");
     displayError("Unable to set up a timer for radio controller interrupt!");
     while (1);
-  } 
+  }
+
+  displayBigMessage("Finished Initializing");
+  delay(2000);
+
+  FS_IA6_SERIAL.clear();
+  radioBuffer.clear();
   lastRadioPacket = millis();
 }
 
@@ -196,7 +228,8 @@ void loop() {
   
   double delat_pressure_sum = 0;
   double last_diff_pres = 0;
-  if (uav_mode == UAV_MODES::idle) {
+
+  if (uav_mode != UAV_MODES::failsafe) {
     switch (sensorsTurn) {
       case 0: // GPS
         //Serial.printf("Received %d bytes from GPS\n", GPS_SERIAL.available());
@@ -235,24 +268,35 @@ void loop() {
       if (delta_pressure > 0) {
         delta_pressure = 0;
       }
+      air_speed = pow((2 * abs(delta_pressure)) / air_density, 0.5);
       Serial.printf("%.2f delta pres, Humidity: %.2f, Temperature: %.2f, Pressure: %.2f, Air Density: %.3f kg/m^3, air speed: %.2f m/s, altitude: %.2f\n",
-       delta_pressure, humidity, temperature, pressure_mb * MB_TO_PA, air_density, pow((2 * abs(delta_pressure)) / air_density, 0.5), altitude);
+       delta_pressure, humidity, temperature, pressure_mb * MB_TO_PA, air_density, air_speed, altitude);
       break;
     case 4: // Display update & azimuth calculation
       calculateAzimuth();
-      displaySensorData(temperature, humidity, pressure_mb * MB_TO_PA, azimuth, true, lat, lng);
+      if (!isFlying()) displaySensorData(temperature, humidity, pressure_mb * MB_TO_PA, azimuth, true, lat, lng);
+      break;
+    case 5:
+      sensorsFile.printf("%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%lf,%lf\n", millis(), temperature, pressure_mb * MB_TO_PA,
+       air_density, humidity, altitude, air_speed, azimuth, batt_voltages[0],
+        batt_voltages[1], batt_voltages[2], batt_voltages[3], lat, lng);
+      sensorsFile.flush();
       break;
     }
+    sensorsTurn++;
+    if (sensorsTurn == 7) {
+      sensorsTurn = 0;
+    }
+  }
+
+  if (uav_mode == UAV_MODES::idle) {
+    ;
   } else if (uav_mode == UAV_MODES::vtol) {
     ;
   } else if (uav_mode == UAV_MODES::fixed_wing) {
     ;
   } else if (uav_mode == UAV_MODES::failsafe) {
-    // do nothing!
-  }
-  sensorsTurn++;
-  if (sensorsTurn == 7) {
-    sensorsTurn = 0;
+    ;
   }
 
   calculateRollPitch();
