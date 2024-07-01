@@ -56,6 +56,8 @@ float batt_voltages[4] = {0};
 #define IBUS_BUFFSIZE 32    
 #define IBUS_MAXCHANNELS 6
 
+uint8_t* buff = (uint8_t*)malloc(50);
+
 static uint8_t ibusIndex = 0;
 static uint8_t ibus[IBUS_BUFFSIZE] = {0};
 static uint16_t radioValues[IBUS_MAXCHANNELS];
@@ -206,7 +208,7 @@ void setup() {
   int sensors_file_name_index = 0;
   do {
     std::ostringstream filepath;
-    filepath << "sensrs-" << sensors_file_name_index << ".txt";
+    filepath << "sensors-" << sensors_file_name_index << ".txt";
     if (!SD.exists(filepath.str().c_str())) {
       sensorsFile = SD.open(filepath.str().c_str(), FILE_WRITE);
       break;
@@ -226,8 +228,7 @@ void setup() {
     while (1);
   }
 
-  Serial.println("");
-  setup_transmitter_config();
+  setup_lora();
 
   displayBigMessage("Finished Initializing");
   delay(2000);
@@ -298,7 +299,12 @@ void loop() {
       break;
     case 6: // Lora communication:
       E32_transmitter.sendFixedMessage(CONTROL_STATION_ADDH, CONTROL_STATION_ADDL, CONTROL_STATION_CHANNEL, "Message to control station!");
-      delay(1000);
+      if (E32_receiver.available() > 28) {
+        Serial.print("Received packet: ");
+        LORA_RECEIVER_SERIAL.readBytes(buff, E32_receiver.available());
+        Serial.println((char*)buff);
+      }
+      delay(1200);
       break;
     }
     sensorsTurn++;
