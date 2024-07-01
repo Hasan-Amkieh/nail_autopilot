@@ -20,6 +20,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <lora_comm.h>
 
 #define ANKARA_PRESSURE 938 // meters from the sea in Ankara
 
@@ -82,16 +83,26 @@ void setup() {
 
   FS_IA6_SERIAL.begin(115200);
 
-  rightWing.attach(RIGHT_WING_SERVO_PIN);
+  rightFirstM.attach(RIGHT_FIRST_MOTOR_PIN, 1000, 2000);
+  rightLastM.attach(RIGHT_LAST_MOTOR_PIN, 1000, 2000);
+  leftFirstM.attach(LEFT_FIRST_MOTOR_PIN, 1000, 2000);
+  leftLastM.attach(LEFT_LAST_MOTOR_PIN, 1000, 2000);
+
+  rightFirstM.write(0);
+  rightLastM.write(0);
+  leftFirstM.write(0);
+  leftLastM.write(0);
+
+  rightWing.attach(RIGHT_WING_SERVO_PIN, 1000, 2000);
   rightWing.write(DEFAULT_SERVO_POS);
 
-  leftWing.attach(RIGHT_WING_SERVO_PIN);
+  leftWing.attach(RIGHT_WING_SERVO_PIN, 1000, 2000);
   leftWing.write(DEFAULT_SERVO_POS);
 
-  rightElevator.attach(RIGHT_WING_SERVO_PIN);
+  rightElevator.attach(RIGHT_WING_SERVO_PIN, 1000, 2000);
   rightElevator.write(DEFAULT_SERVO_POS);
 
-  leftElevator.attach(RIGHT_WING_SERVO_PIN);
+  leftElevator.attach(RIGHT_WING_SERVO_PIN, 1000, 2000);
   leftElevator.write(DEFAULT_SERVO_POS);
 
   testAllServoMotors();
@@ -215,6 +226,9 @@ void setup() {
     while (1);
   }
 
+  Serial.println("");
+  setup_transmitter_config();
+
   displayBigMessage("Finished Initializing");
   delay(2000);
 
@@ -276,11 +290,15 @@ void loop() {
       calculateAzimuth();
       if (!isFlying()) displaySensorData(temperature, humidity, pressure_mb * MB_TO_PA, azimuth, true, lat, lng);
       break;
-    case 5:
+    case 5: // flush all the files to SD card!
       sensorsFile.printf("%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%lf,%lf\n", millis(), temperature, pressure_mb * MB_TO_PA,
        air_density, humidity, altitude, air_speed, azimuth, batt_voltages[0],
         batt_voltages[1], batt_voltages[2], batt_voltages[3], lat, lng);
       sensorsFile.flush();
+      break;
+    case 6: // Lora communication:
+      E32_transmitter.sendFixedMessage(CONTROL_STATION_ADDH, CONTROL_STATION_ADDL, CONTROL_STATION_CHANNEL, "Message to control station!");
+      delay(1000);
       break;
     }
     sensorsTurn++;
@@ -300,11 +318,10 @@ void loop() {
   }
 
   calculateRollPitch();
+  processRadioController();
 
   Serial.print(millis() - start);
   Serial.println(" ms");
-
-  processRadioController();
 }
 
 void radioControllerRead() {

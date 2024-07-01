@@ -6,14 +6,24 @@
 #define RIGHT_ELEVATOR_SERVO_PIN 4
 #define LEFT_ELEVATOR_SERVO_PIN 5
 
+#define RIGHT_FIRST_MOTOR_PIN 14
+#define RIGHT_LAST_MOTOR_PIN 15
+#define LEFT_FIRST_MOTOR_PIN 23
+#define LEFT_LAST_MOTOR_PIN 22
+
 #define MAX_SURFACE_CONTROL_ANGLE 15
 
 #define DEFAULT_SERVO_POS 90
 
-PWMServo rightWing;  // create servo object to control a servo
-PWMServo leftWing;  // create servo object to control a ser
-PWMServo rightElevator;  // create servo object to control a ser
-PWMServo leftElevator;  // create servo object to control a ser
+PWMServo rightWing;
+PWMServo leftWing;
+PWMServo rightElevator;
+PWMServo leftElevator;
+
+PWMServo rightFirstM;
+PWMServo rightLastM;
+PWMServo leftFirstM;
+PWMServo leftLastM;
 
 void testAllServoMotors() {
 
