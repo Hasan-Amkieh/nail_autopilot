@@ -56,7 +56,7 @@ float batt_voltages[4] = {0};
 #define IBUS_BUFFSIZE 32    
 #define IBUS_MAXCHANNELS 6
 
-uint8_t* buff = (uint8_t*)malloc(50);
+uint8_t* buff = (uint8_t*)malloc(28);
 
 static uint8_t ibusIndex = 0;
 static uint8_t ibus[IBUS_BUFFSIZE] = {0};
@@ -64,6 +64,9 @@ static uint16_t radioValues[IBUS_MAXCHANNELS];
 IntervalTimer radioControllerTimer;
 void radioControllerRead();
 void processRadioController();
+
+IntervalTimer loraTimer;
+void processLora();
 
 File sensorsFile;
 
@@ -230,6 +233,12 @@ void setup() {
 
   setup_lora();
 
+  if (!loraTimer.begin(processLora, 1320000)) {
+    Serial.println("Unable to set up a timer for lora interrupt!");
+    displayError("Unable to set up a timer for lora interrupt!");
+    while (1);
+  }
+
   displayBigMessage("Finished Initializing");
   delay(2000);
 
@@ -298,13 +307,7 @@ void loop() {
       sensorsFile.flush();
       break;
     case 6: // Lora communication:
-      E32_transmitter.sendFixedMessage(CONTROL_STATION_ADDH, CONTROL_STATION_ADDL, CONTROL_STATION_CHANNEL, "Message to control station!");
-      if (E32_receiver.available() > 28) {
-        Serial.print("Received packet: ");
-        LORA_RECEIVER_SERIAL.readBytes(buff, E32_receiver.available());
-        Serial.println((char*)buff);
-      }
-      delay(1200);
+      ;
       break;
     }
     sensorsTurn++;
@@ -328,11 +331,22 @@ void loop() {
 
   Serial.print(millis() - start);
   Serial.println(" ms");
+
+  //delay(100);
 }
 
 void radioControllerRead() {
   while (FS_IA6_SERIAL.available()) {
     radioBuffer.push(FS_IA6_SERIAL.read());
+  }
+}
+
+void processLora() {
+  E32_transmitter.sendFixedMessage(CONTROL_STATION_ADDH, CONTROL_STATION_ADDL, CONTROL_STATION_CHANNEL, "Message to control station!");
+  if (E32_receiver.available() >= 28) {
+    Serial.print("Received packet: ");
+    LORA_RECEIVER_SERIAL.readBytes(buff, 27);
+    Serial.println((char*)buff);
   }
 }
 
