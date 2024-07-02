@@ -233,19 +233,12 @@ void setup() {
 
   setup_lora();
 
-<<<<<<< HEAD
-  if (!loraTimer.begin(processLora, 400000)) { // 1320_000 micros should be enough...
-=======
-  if (!loraTimer.begin(processLora, 1320000)) {
->>>>>>> 9d62fb72d63c13d68d26e41d60a4707b6a71471e
+  if (!loraTimer.begin(processLora, 500000)) { // 1320_000 micros should be enough...
     Serial.println("Unable to set up a timer for lora interrupt!");
     displayError("Unable to set up a timer for lora interrupt!");
     while (1);
   }
-<<<<<<< HEAD
   lastLoraPacket = millis();
-=======
->>>>>>> 9d62fb72d63c13d68d26e41d60a4707b6a71471e
 
   displayBigMessage("Finished Initializing");
   delay(2000);
@@ -264,10 +257,6 @@ void loop() {
   if (uav_mode != UAV_MODES::failsafe) {
     switch (sensorsTurn) {
       case 0: // GPS
-        //Serial.printf("Received %d bytes from GPS\n", GPS_SERIAL.available());
-        while (GPS_SERIAL.available() > 0) {
-          gps.encode(GPS_SERIAL.read());
-        }
         if (gps.location.isUpdated()) {
           lat = gps.location.lat();
           lng = gps.location.lng();
@@ -345,16 +334,16 @@ void loop() {
   Serial.print(millis() - start);
   Serial.println(" ms");
 
-<<<<<<< HEAD
   delay(100);
-=======
-  //delay(100);
->>>>>>> 9d62fb72d63c13d68d26e41d60a4707b6a71471e
 }
 
 void radioControllerRead() {
   while (FS_IA6_SERIAL.available()) {
     radioBuffer.push(FS_IA6_SERIAL.read());
+  }
+
+  while (GPS_SERIAL.available() > 0) {
+    gps.encode(GPS_SERIAL.read());
   }
 }
 
@@ -364,10 +353,7 @@ void processLora() {
     Serial.print("Received packet: ");
     LORA_RECEIVER_SERIAL.readBytes(buff, 27);
     Serial.println((char*)buff);
-<<<<<<< HEAD
     lastLoraPacket = millis();
-=======
->>>>>>> 9d62fb72d63c13d68d26e41d60a4707b6a71471e
   }
 }
 
