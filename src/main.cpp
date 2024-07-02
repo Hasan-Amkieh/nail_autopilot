@@ -233,12 +233,19 @@ void setup() {
 
   setup_lora();
 
+<<<<<<< HEAD
   if (!loraTimer.begin(processLora, 400000)) { // 1320_000 micros should be enough...
+=======
+  if (!loraTimer.begin(processLora, 1320000)) {
+>>>>>>> 9d62fb72d63c13d68d26e41d60a4707b6a71471e
     Serial.println("Unable to set up a timer for lora interrupt!");
     displayError("Unable to set up a timer for lora interrupt!");
     while (1);
   }
+<<<<<<< HEAD
   lastLoraPacket = millis();
+=======
+>>>>>>> 9d62fb72d63c13d68d26e41d60a4707b6a71471e
 
   displayBigMessage("Finished Initializing");
   delay(2000);
@@ -338,7 +345,11 @@ void loop() {
   Serial.print(millis() - start);
   Serial.println(" ms");
 
+<<<<<<< HEAD
   delay(100);
+=======
+  //delay(100);
+>>>>>>> 9d62fb72d63c13d68d26e41d60a4707b6a71471e
 }
 
 void radioControllerRead() {
@@ -353,7 +364,10 @@ void processLora() {
     Serial.print("Received packet: ");
     LORA_RECEIVER_SERIAL.readBytes(buff, 27);
     Serial.println((char*)buff);
+<<<<<<< HEAD
     lastLoraPacket = millis();
+=======
+>>>>>>> 9d62fb72d63c13d68d26e41d60a4707b6a71471e
   }
 }
 
