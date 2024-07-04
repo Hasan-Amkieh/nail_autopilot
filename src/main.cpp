@@ -36,6 +36,10 @@
 #define FS_IA6_SERIAL Serial4
 #define FS_IA6_SERIAL_BUFFER_SIZE 256
 
+#define STEPPER_MOTOR_PULSE 33
+#define STEPPER_MOTOR_DIR 31
+#define STEPPER_MOTOR_EN 32
+
 CircularBuffer<uint8_t, FS_IA6_SERIAL_BUFFER_SIZE> radioBuffer;
 
 int sensorsTurn = 0;
@@ -64,6 +68,9 @@ static uint16_t radioValues[IBUS_MAXCHANNELS];
 IntervalTimer radioControllerTimer;
 void radioControllerRead();
 void processRadioController();
+
+IntervalTimer transitionTimer;
+void transitionSwitch();
 
 IntervalTimer loraTimer;
 void processLora();
@@ -189,7 +196,7 @@ void setup() {
   Serial.println("Initialized Airspeed sensor!");
 
   htu.begin();
-  htu.setResolution(HTU21DResolution::RESOLUTION_RH8_T12);
+  htu.setResolution(HTU21DResolution::RESOLUTION_RH11_T11);
   Serial.println("Initialized HTU21D!");
 
   if (!bmp.begin()) {
@@ -225,6 +232,14 @@ void setup() {
   }
   Serial.println("Initialized the SD card!");
 
+  transitionTimer.priority(0); // has the highest priority, as it is the most important
+  if (!transitionTimer.begin(transitionSwitch, 1000)) {
+    Serial.println("Unable to set up a timer for the transition function!");
+    displayError("Unable to set up a timer for the transition function!");
+    while (1);
+  }
+
+  radioControllerTimer.priority(1);
   if (!radioControllerTimer.begin(radioControllerRead, 10000)) {
     Serial.println("Unable to set up a timer for radio controller interrupt!");
     displayError("Unable to set up a timer for radio controller interrupt!");
@@ -233,6 +248,7 @@ void setup() {
 
   setup_lora();
 
+  loraTimer.priority(2);
   if (!loraTimer.begin(processLora, 500000)) { // 1320_000 micros should be enough...
     Serial.println("Unable to set up a timer for lora interrupt!");
     displayError("Unable to set up a timer for lora interrupt!");
@@ -342,9 +358,18 @@ void radioControllerRead() {
     radioBuffer.push(FS_IA6_SERIAL.read());
   }
 
+  Serial.printf("Recieved %d bytes from GPS\n", GPS_SERIAL.available());
   while (GPS_SERIAL.available() > 0) {
     gps.encode(GPS_SERIAL.read());
   }
+}
+
+void transitionSwitch() {
+
+  static bool transitionPulseState = false;
+  digitalWrite(transitionPin, transitionPulseState);
+  transitionPulseState = !transitionPulseState;
+
 }
 
 void processLora() {

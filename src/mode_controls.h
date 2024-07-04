@@ -2,7 +2,7 @@
 #include <display_funcs.h>
 
 #define RADIO_TIMEOUT 2000
-#define LORA_TIMEOUT 4000
+#define LORA_TIMEOUT 10000 // 10 seconds
 
 enum UAV_MODES {
     idle, vtol, fixed_wing, failsafe
