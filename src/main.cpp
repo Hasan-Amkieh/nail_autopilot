@@ -21,6 +21,10 @@
 #include <sstream>
 #include <string>
 #include <lora_comm.h>
+#include <iostream>
+#include <sstream>
+#include <iomanip>
+#include <cstring>
 
 #define ANKARA_PRESSURE 938 // meters from the sea in Ankara
 
@@ -36,9 +40,40 @@
 #define FS_IA6_SERIAL Serial4
 #define FS_IA6_SERIAL_BUFFER_SIZE 256
 
-#define STEPPER_MOTOR_PULSE 33
-#define STEPPER_MOTOR_DIR 31
-#define STEPPER_MOTOR_EN 32
+#define STEPPER_MOTOR_PULSE_PIN 33
+#define STEPPER_MOTOR_DIR_PIN 31
+#define STEPPER_MOTOR_EN_PIN 32
+
+struct FeedbackPacket {
+  char start = '\0';
+  uint8_t latBefore;
+  char latAfter[6];
+  uint8_t lngBefore;
+  char lngAfter[6];
+  float airspeed;               // 4 bytes
+  float pressure;
+  int16_t roll, pitch, yaw;     // 6 bytes
+  uint16_t azimuth;             // 2 bytes
+  uint8_t packetConfirmationID = 0; // 1 byte
+  uint8_t altitude;             // 1 byte
+  uint8_t temp;                 // 1 byte
+  uint8_t humidity;             // 1 byte
+  uint8_t battery_level;        // 1 byte
+  uint8_t m1_throttle;          // 1 byte
+  uint8_t m2_throttle;          // 1 byte
+  uint8_t m3_throttle;          // 1 byte
+  uint8_t m4_throttle;          // 1 byte
+} __attribute__((packed));
+
+void doubleToDecimals(double dbl, char floats[6]) {
+    
+    std::ostringstream strs;
+    strs << std::fixed << std::setprecision(6) << dbl;
+    std::string out_ = strs.str();
+    out_ = out_.substr(out_.find(".") + 1);
+    strncpy(floats, out_.c_str(), 6);
+    
+}
 
 CircularBuffer<uint8_t, FS_IA6_SERIAL_BUFFER_SIZE> radioBuffer;
 
@@ -71,6 +106,10 @@ void processRadioController();
 
 IntervalTimer transitionTimer;
 void transitionSwitch();
+void startTransitioning();
+void stopTransitioning();
+
+struct FeedbackPacket packet;
 
 IntervalTimer loraTimer;
 void processLora();
@@ -233,11 +272,10 @@ void setup() {
   Serial.println("Initialized the SD card!");
 
   transitionTimer.priority(0); // has the highest priority, as it is the most important
-  if (!transitionTimer.begin(transitionSwitch, 1000)) {
-    Serial.println("Unable to set up a timer for the transition function!");
-    displayError("Unable to set up a timer for the transition function!");
-    while (1);
-  }
+  pinMode(STEPPER_MOTOR_PULSE_PIN, OUTPUT);
+  pinMode(STEPPER_MOTOR_EN_PIN, OUTPUT);
+  pinMode(STEPPER_MOTOR_DIR_PIN, OUTPUT);
+  digitalWrite(STEPPER_MOTOR_EN_PIN, LOW); // by default the motor is off
 
   radioControllerTimer.priority(1);
   if (!radioControllerTimer.begin(radioControllerRead, 10000)) {
@@ -329,8 +367,12 @@ void loop() {
     }
   }
 
-  if (uav_mode == UAV_MODES::idle) {
-    ;
+  if (uav_mode == UAV_MODES::idle) { // in idle mode, we use the first 4 channels to test the controller and the surface control!
+    Serial.println(map((double)radioValues[0], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE);
+    rightWing.write(DEFAULT_SERVO_POS + map((double)radioValues[0], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE);
+    leftWing.write(DEFAULT_SERVO_POS +  map((double)radioValues[1], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE);
+    rightElevator.write(DEFAULT_SERVO_POS + map((double)radioValues[2], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE);
+    leftElevator.write(DEFAULT_SERVO_POS + map((double)radioValues[3], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE);
   } else if (uav_mode == UAV_MODES::vtol) {
     ;
   } else if (uav_mode == UAV_MODES::fixed_wing) {
@@ -358,22 +400,52 @@ void radioControllerRead() {
     radioBuffer.push(FS_IA6_SERIAL.read());
   }
 
-  Serial.printf("Recieved %d bytes from GPS\n", GPS_SERIAL.available());
+  //Serial.printf("Recieved %d bytes from GPS\n", GPS_SERIAL.available());
   while (GPS_SERIAL.available() > 0) {
     gps.encode(GPS_SERIAL.read());
   }
 }
 
+// called when needed to move the stepper motor to start moving to the other mode
+void startTransitioning() {
+  transitionTimer.begin(transitionSwitch, 1000);
+  digitalWrite(STEPPER_MOTOR_EN_PIN, HIGH);
+}
+
+void stopTransitioning() {
+  transitionTimer.end();
+  digitalWrite(STEPPER_MOTOR_EN_PIN, LOW);
+}
+
 void transitionSwitch() {
 
   static bool transitionPulseState = false;
-  digitalWrite(transitionPin, transitionPulseState);
+  digitalWrite(STEPPER_MOTOR_PULSE_PIN, transitionPulseState);
   transitionPulseState = !transitionPulseState;
 
 }
 
 void processLora() {
-  E32_transmitter.sendFixedMessage(CONTROL_STATION_ADDH, CONTROL_STATION_ADDL, CONTROL_STATION_CHANNEL, "Message to control station!");
+  packet.airspeed = (float)air_speed;
+  packet.altitude = (uint8_t)altitude;
+  packet.azimuth = azimuth;
+  packet.pressure = pressure_mb * MB_TO_PA / 1000.0;
+  packet.battery_level = 100;
+  packet.humidity = humidity;
+  packet.latBefore = (uint8_t)lat;
+  packet.lngBefore = (uint8_t)lng;
+  doubleToDecimals(lat, packet.latAfter);
+  doubleToDecimals(lng, packet.lngAfter);
+  packet.m1_throttle = 0;
+  packet.m2_throttle = 0;
+  packet.m3_throttle = 0;
+  packet.m4_throttle = 0;
+  packet.roll = kalm_roll;
+  packet.pitch = kalm_pitch;
+  packet.yaw = yaw;
+  packet.temp = temperature;
+
+  E32_transmitter.sendFixedMessage(CONTROL_STATION_ADDH, CONTROL_STATION_ADDL, CONTROL_STATION_CHANNEL, (uint8_t*)&packet, sizeof(packet));
   if (E32_receiver.available() >= 28) {
     Serial.print("Received packet: ");
     LORA_RECEIVER_SERIAL.readBytes(buff, 27);
