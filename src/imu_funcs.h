@@ -132,4 +132,6 @@ void calculateAzimuth() {
 
   yaw = abs(firstAzimuth - azimuth);
 
+  Serial.printf("Uni:0.00,0.00,0.00,0.00,0.00,0.00,%.2f,%.2f,%.2f\n", x, y, z);
+
 }

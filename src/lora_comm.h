@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <LoRa_E32.h>
+#include <sensors/LoRa_E32.h>
 #include <display_funcs.h>
 
 

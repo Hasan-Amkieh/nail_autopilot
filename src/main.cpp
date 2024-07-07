@@ -3,9 +3,9 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include <HTU21D.h>
+#include <sensors/HTU21D.h>
 #include <math.h>
-#include <MechaQMC5883.h>
+#include <sensors/MechaQMC5883.h>
 #include <imu_funcs.h>
 #include <display_funcs.h>
 #include <air_speed_funcs.h>
@@ -31,6 +31,8 @@
 #define PA_TO_HPA 0.01
 #define MB_TO_PA 100
 
+#define BATTERY_VOLTAGE_PIN 41
+
 #define GPS_TX_PIN 28
 #define GPS_RX_PIN 29
 #define GPS_SERIAL Serial7
@@ -52,6 +54,7 @@ struct FeedbackPacket {
   char lngAfter[6];
   float airspeed;               // 4 bytes
   float pressure;
+  float batt_volt;
   int16_t roll, pitch, yaw;     // 6 bytes
   uint16_t azimuth;             // 2 bytes
   uint8_t packetConfirmationID = 0; // 1 byte
@@ -90,7 +93,7 @@ const float avg_diff_pres_offset = 128; // in pascals
 HTU21D htu;
 
 double temperature, humidity, delta_pressure, delta_pressure_old = 0, air_density, air_speed;
-float batt_voltages[4] = {0};
+float batt_voltage = 0;
 
 #define IBUS_BUFFSIZE 32    
 #define IBUS_MAXCHANNELS 6
@@ -129,7 +132,7 @@ void setup() {
     while (true) ;
   }
   u8g2.enableUTF8Print();
-  Serial.println("U8g2 is initialized!");
+  //Serial.println("U8g2 is initialized!");
   displayBigMessage("...Initializing...");
 
   FS_IA6_SERIAL.begin(115200);
@@ -155,6 +158,8 @@ void setup() {
 
   leftElevator.attach(RIGHT_WING_SERVO_PIN, 1000, 2000);
   leftElevator.write(DEFAULT_SERVO_POS);
+
+  pinMode(BATTERY_VOLTAGE_PIN, INPUT);
 
   testAllServoMotors();
 
@@ -186,7 +191,7 @@ void setup() {
   qmc.init();
   qmc.setMode(Mode_Continuous, qmc_sense_rate, RNG_2G, OSR_512);
 
-  Serial.println("Initialized Magnetometer!");
+  //Serial.println("Initialized Magnetometer!");
 
   SPI.beginTransaction(bmi160_settings);
   if (!BMI160.begin(BMI160GenClass::SPI_MODE,  Wire, BMI160_CS_PIN)) {
@@ -194,7 +199,7 @@ void setup() {
     displayError("Failed to initialize BMI160!");
     while(true) {}
   }
-  Serial.println("Initialized BMI160!");
+  //Serial.println("Initialized BMI160!");
   displayBigMessage("...Calibrating IMU...");
 
   BMI160.setGyroRate(BMI160_SENSE_RATE);
@@ -232,18 +237,18 @@ void setup() {
     displayError("Couldn't find Air speed!");
     while(1){}
   }
-  Serial.println("Initialized Airspeed sensor!");
+  //Serial.println("Initialized Airspeed sensor!");
 
   htu.begin();
   htu.setResolution(HTU21DResolution::RESOLUTION_RH11_T11);
-  Serial.println("Initialized HTU21D!");
+  //Serial.println("Initialized HTU21D!");
 
   if (!bmp.begin()) {
     Serial.println("Couldn't find BMP180!");
     displayError("Couldn't find BMP180!");
     while (1);
   }
-  Serial.println("Initialized BMP180!");
+  //Serial.println("Initialized BMP180!");
 
   calculateAzimuth();
   firstAzimuth = azimuth;
@@ -269,7 +274,7 @@ void setup() {
     displayError("Couldn't open the sensors file!");
     while (1) ;
   }
-  Serial.println("Initialized the SD card!");
+  //Serial.println("Initialized the SD card!");
 
   transitionTimer.priority(0); // has the highest priority, as it is the most important
   pinMode(STEPPER_MOTOR_PULSE_PIN, OUTPUT);
@@ -314,10 +319,10 @@ void loop() {
         if (gps.location.isUpdated()) {
           lat = gps.location.lat();
           lng = gps.location.lng();
-          Serial.print("Latitude: ");
-          Serial.println(lat, 6);
-          Serial.print("Longitude: ");
-          Serial.println(lng, 6);
+          //Serial.print("Latitude: ");
+          //Serial.println(lat, 6);
+          //Serial.print("Longitude: ");
+          //Serial.println(lng, 6);
         }
         break;
     case 1: // Humidity
@@ -344,17 +349,17 @@ void loop() {
         delta_pressure = 0;
       }
       air_speed = pow((2 * abs(delta_pressure)) / air_density, 0.5);
-      Serial.printf("%.2f delta pres, Humidity: %.2f, Temperature: %.2f, Pressure: %.2f, Air Density: %.3f kg/m^3, air speed: %.2f m/s, altitude: %.2f\n",
-       delta_pressure, humidity, temperature, pressure_mb * MB_TO_PA, air_density, air_speed, altitude);
+      //Serial.printf("%.2f delta pres, Humidity: %.2f, Temperature: %.2f, Pressure: %.2f, Air Density: %.3f kg/m^3, air speed: %.2f m/s, altitude: %.2f\n",
+       //delta_pressure, humidity, temperature, pressure_mb * MB_TO_PA, air_density, air_speed, altitude);
       break;
     case 4: // Display update & azimuth calculation
       calculateAzimuth();
       if (!isFlying()) displaySensorData(temperature, humidity, pressure_mb * MB_TO_PA, azimuth, true, lat, lng);
       break;
     case 5: // flush all the files to SD card!
-      sensorsFile.printf("%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%lf,%lf\n", millis(), temperature, pressure_mb * MB_TO_PA,
-       air_density, humidity, altitude, air_speed, azimuth, batt_voltages[0],
-        batt_voltages[1], batt_voltages[2], batt_voltages[3], lat, lng);
+      batt_voltage = (analogRead(BATTERY_VOLTAGE_PIN) / 1023.0 * 3.3 - 0.07) / 3.3 * 25.2; // 0 - 3.23v -> 0 - 25.2v | R1 = 68K, R2 = 10K
+      sensorsFile.printf("%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%lf,%lf\n", millis(), temperature, pressure_mb * MB_TO_PA,
+       air_density, humidity, altitude, air_speed, azimuth, batt_voltage, lat, lng);
       sensorsFile.flush();
       break;
     case 6: // Lora communication:
@@ -368,7 +373,6 @@ void loop() {
   }
 
   if (uav_mode == UAV_MODES::idle) { // in idle mode, we use the first 4 channels to test the controller and the surface control!
-    Serial.println(map((double)radioValues[0], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE);
     rightWing.write(DEFAULT_SERVO_POS + map((double)radioValues[0], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE);
     leftWing.write(DEFAULT_SERVO_POS +  map((double)radioValues[1], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE);
     rightElevator.write(DEFAULT_SERVO_POS + map((double)radioValues[2], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE);
@@ -389,8 +393,8 @@ void loop() {
     exitFailSafeMode();
   }
 
-  Serial.print(millis() - start);
-  Serial.println(" ms");
+  //Serial.print(millis() - start);
+  //Serial.println(" ms");
 
   delay(100);
 }
@@ -440,6 +444,7 @@ void processLora() {
   packet.m2_throttle = 0;
   packet.m3_throttle = 0;
   packet.m4_throttle = 0;
+  packet.batt_volt = batt_voltage;
   packet.roll = kalm_roll;
   packet.pitch = kalm_pitch;
   packet.yaw = yaw;
@@ -447,9 +452,9 @@ void processLora() {
 
   E32_transmitter.sendFixedMessage(CONTROL_STATION_ADDH, CONTROL_STATION_ADDL, CONTROL_STATION_CHANNEL, (uint8_t*)&packet, sizeof(packet));
   if (E32_receiver.available() >= 28) {
-    Serial.print("Received packet: ");
+    //Serial.print("Received packet: ");
     LORA_RECEIVER_SERIAL.readBytes(buff, 27);
-    Serial.println((char*)buff);
+    //Serial.println((char*)buff);
     lastLoraPacket = millis();
   }
 }
@@ -476,7 +481,7 @@ void processRadioController() {
         low += 2;
       }
       lastRadioPacket = millis();
-      Serial.printf("%d, %d, %d, %d, %d, %d\n", radioValues[0], radioValues[1], radioValues[2], radioValues[3] ,radioValues[4], radioValues[5]);
+      //Serial.printf("%d, %d, %d, %d, %d, %d\n", radioValues[0], radioValues[1], radioValues[2], radioValues[3] ,radioValues[4], radioValues[5]);
     }
     else {
       ibus[ibusIndex] = val;

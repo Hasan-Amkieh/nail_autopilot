@@ -45,7 +45,7 @@
 	#include <SoftwareSerial.h>
 #endif
 
-#include <statesNaming.h>
+#include <sensors/statesNaming.h>
 
 #if ARDUINO >= 100
 #include "Arduino.h"

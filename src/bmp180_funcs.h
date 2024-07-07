@@ -1,4 +1,4 @@
-#include "SFE_BMP180.h"
+#include "sensors/SFE_BMP180.h"
 
 SFE_BMP180 bmp;
 double T, pressure_mb, altitude0 = 0, altitude;
