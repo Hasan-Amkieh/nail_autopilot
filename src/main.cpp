@@ -132,7 +132,7 @@ void setup() {
     while (true) ;
   }
   u8g2.enableUTF8Print();
-  //Serial.println("U8g2 is initialized!");
+  Serial.println("U8g2 is initialized!");
   displayBigMessage("...Initializing...");
 
   FS_IA6_SERIAL.begin(115200);
@@ -191,7 +191,7 @@ void setup() {
   qmc.init();
   qmc.setMode(Mode_Continuous, qmc_sense_rate, RNG_2G, OSR_512);
 
-  //Serial.println("Initialized Magnetometer!");
+  Serial.println("Initialized Magnetometer!");
 
   SPI.beginTransaction(bmi160_settings);
   if (!BMI160.begin(BMI160GenClass::SPI_MODE,  Wire, BMI160_CS_PIN)) {
@@ -199,7 +199,7 @@ void setup() {
     displayError("Failed to initialize BMI160!");
     while(true) {}
   }
-  //Serial.println("Initialized BMI160!");
+  Serial.println("Initialized BMI160!");
   displayBigMessage("...Calibrating IMU...");
 
   BMI160.setGyroRate(BMI160_SENSE_RATE);
@@ -237,18 +237,18 @@ void setup() {
     displayError("Couldn't find Air speed!");
     while(1){}
   }
-  //Serial.println("Initialized Airspeed sensor!");
+  Serial.println("Initialized Airspeed sensor!");
 
   htu.begin();
   htu.setResolution(HTU21DResolution::RESOLUTION_RH11_T11);
-  //Serial.println("Initialized HTU21D!");
+  Serial.println("Initialized HTU21D!");
 
   if (!bmp.begin()) {
     Serial.println("Couldn't find BMP180!");
     displayError("Couldn't find BMP180!");
     while (1);
   }
-  //Serial.println("Initialized BMP180!");
+  Serial.println("Initialized BMP180!");
 
   calculateAzimuth();
   firstAzimuth = azimuth;
@@ -274,7 +274,7 @@ void setup() {
     displayError("Couldn't open the sensors file!");
     while (1) ;
   }
-  //Serial.println("Initialized the SD card!");
+  Serial.println("Initialized the SD card!");
 
   transitionTimer.priority(0); // has the highest priority, as it is the most important
   pinMode(STEPPER_MOTOR_PULSE_PIN, OUTPUT);
@@ -319,10 +319,10 @@ void loop() {
         if (gps.location.isUpdated()) {
           lat = gps.location.lat();
           lng = gps.location.lng();
-          //Serial.print("Latitude: ");
-          //Serial.println(lat, 6);
-          //Serial.print("Longitude: ");
-          //Serial.println(lng, 6);
+          Serial.print("Latitude: ");
+          Serial.println(lat, 6);
+          Serial.print("Longitude: ");
+          Serial.println(lng, 6);
         }
         break;
     case 1: // Humidity
@@ -349,8 +349,8 @@ void loop() {
         delta_pressure = 0;
       }
       air_speed = pow((2 * abs(delta_pressure)) / air_density, 0.5);
-      //Serial.printf("%.2f delta pres, Humidity: %.2f, Temperature: %.2f, Pressure: %.2f, Air Density: %.3f kg/m^3, air speed: %.2f m/s, altitude: %.2f\n",
-       //delta_pressure, humidity, temperature, pressure_mb * MB_TO_PA, air_density, air_speed, altitude);
+      Serial.printf("%.2f delta pres, Humidity: %.2f, Temperature: %.2f, Pressure: %.2f, Air Density: %.3f kg/m^3, air speed: %.2f m/s, altitude: %.2f\n",
+       delta_pressure, humidity, temperature, pressure_mb * MB_TO_PA, air_density, air_speed, altitude);
       break;
     case 4: // Display update & azimuth calculation
       calculateAzimuth();
@@ -393,8 +393,8 @@ void loop() {
     exitFailSafeMode();
   }
 
-  //Serial.print(millis() - start);
-  //Serial.println(" ms");
+  Serial.print(millis() - start);
+  Serial.println(" ms");
 
   delay(100);
 }
@@ -404,7 +404,7 @@ void radioControllerRead() {
     radioBuffer.push(FS_IA6_SERIAL.read());
   }
 
-  //Serial.printf("Recieved %d bytes from GPS\n", GPS_SERIAL.available());
+  Serial.printf("Recieved %d bytes from GPS\n", GPS_SERIAL.available());
   while (GPS_SERIAL.available() > 0) {
     gps.encode(GPS_SERIAL.read());
   }
@@ -452,9 +452,9 @@ void processLora() {
 
   E32_transmitter.sendFixedMessage(CONTROL_STATION_ADDH, CONTROL_STATION_ADDL, CONTROL_STATION_CHANNEL, (uint8_t*)&packet, sizeof(packet));
   if (E32_receiver.available() >= 28) {
-    //Serial.print("Received packet: ");
+    Serial.print("Received packet: ");
     LORA_RECEIVER_SERIAL.readBytes(buff, 27);
-    //Serial.println((char*)buff);
+    Serial.println((char*)buff);
     lastLoraPacket = millis();
   }
 }
@@ -481,7 +481,7 @@ void processRadioController() {
         low += 2;
       }
       lastRadioPacket = millis();
-      //Serial.printf("%d, %d, %d, %d, %d, %d\n", radioValues[0], radioValues[1], radioValues[2], radioValues[3] ,radioValues[4], radioValues[5]);
+      Serial.printf("%d, %d, %d, %d, %d, %d\n", radioValues[0], radioValues[1], radioValues[2], radioValues[3] ,radioValues[4], radioValues[5]);
     }
     else {
       ibus[ibusIndex] = val;

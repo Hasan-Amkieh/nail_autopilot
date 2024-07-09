@@ -34,7 +34,7 @@ float azimuth = 0, old_azimuth;
 float mag_x_hor = 0, mag_y_hor = 0;
 
 const float hard_iron[3] = {
-  1.5150000000000006, -21.000000000000004, 6.41
+  0.8049999999999997, 10.829999999999998, -4.18
 };
 
 float low_pass_filter(float old_val, float new_val) {
@@ -130,8 +130,14 @@ void calculateAzimuth() {
   azimuth += ANKARA_DECLINATION + 90.0;
   azimuth = azimuth < 0 ? 360 + azimuth : azimuth;
 
-  yaw = abs(firstAzimuth - azimuth);
+  yaw = firstAzimuth - azimuth;
+  if (yaw > 360.0) {
+    yaw -= 360.0;
+  }
+  if (yaw < 0.0) {
+    yaw += 360.0;
+  }
 
-  Serial.printf("Uni:0.00,0.00,0.00,0.00,0.00,0.00,%.2f,%.2f,%.2f\n", x, y, z);
+  //Serial.printf("Uni:0.00,0.00,0.00,0.00,0.00,0.00,%.2f,%.2f,%.2f\n", x, y, z);
 
 }
