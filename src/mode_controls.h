@@ -2,7 +2,8 @@
 #include <display_funcs.h>
 
 #define RADIO_TIMEOUT 4000
-#define LORA_TIMEOUT 10000 // 10 seconds
+#define LORA_TIMEOUT 10000
+#define GPS_TIMEOUT 3000
 
 enum UAV_MODES {
     idle, vtol, fixed_wing, failsafe
@@ -10,22 +11,46 @@ enum UAV_MODES {
 
 const int failsafe_values[6] = {1009, 1002, 1001, 1016, 1000, 1000};
 UAV_MODES uav_mode = UAV_MODES::idle;
-uint32_t lastRadioPacket = 0, lastLoraPacket = 0;
+uint32_t lastRadioPacket = 0, lastLoraPacket = 0, lastGPSPacket = 0;
 UAV_MODES prevMode = UAV_MODES::idle;
-bool isRadioOn = true, isLoraOn = true;
+bool isRadioOn = true, isLoraOn = true, isGPSOn = true;
 
 void switchToFailSafe() {
 
     if (uav_mode != UAV_MODES::failsafe) {
         if (!isRadioOn) {
-            Serial.println("WARNING: SWITCHING TO FAILSAFE MODE\n\tCAUSE:RADIO COMMUNICATON IS OUT!");
-            displayError("SWITCHING TO FAILSAFE MODE, DISCONNECTED RADIO!");
+            Serial.println("WARNING: Switching to failsafe mode\n\tRadio communication is lost!");
+            displayError("Switching to failsafe mode, disconnected radio!");
         } else if (!isLoraOn) {
-            Serial.println("WARNING: SWITCHING TO FAILSAFE MODE\n\tCAUSE:LORA COMMUNICATON IS OUT!");
-            displayError("SWITCHING TO FAILSAFE MODE, DISCONNECTED LORA!");
+            Serial.println("WARNING: Switching to failsafe mode\n\tLORA communication is lost!");
+            displayError("Switching to failsafe mode, disconnected LORA!");
+        } else if (!isGPSOn) {
+            Serial.println("WARNING: Switching to failsafe mode\n\tNo GPS signal!");
+            displayError("Switching to failsafe mode, no GPS signal!");
         }
         prevMode = uav_mode;
         uav_mode = UAV_MODES::failsafe;
+    }
+
+}
+
+bool isGPSRunning() {
+
+    isGPSOn = (millis() - lastGPSPacket) < GPS_TIMEOUT;
+    return isGPSOn;
+
+}
+
+void updateFailSafeMessage() {
+
+    if (uav_mode == UAV_MODES::failsafe) {
+        if (!isRadioOn) {
+            displayError("Switching to failsafe mode, disconnected RADIO!");
+        } else if (!isLoraOn) {
+            displayError("Switching to failsafe mode, disconnected LORA!");
+        } else if (!isGPSOn) {
+            displayError("Switching to failsafe mode, no GPS signal!");
+        }
     }
 
 }

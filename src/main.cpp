@@ -84,6 +84,7 @@ int sensorsTurn = 0;
 
 TinyGPSPlus gps;
 double lat, lng;
+TinyGPSHDOP gpsPrecision;
 
 MechaQMC5883 qmc;
 
@@ -150,13 +151,13 @@ void setup() {
   rightWing.attach(RIGHT_WING_SERVO_PIN, 1000, 2000);
   rightWing.write(DEFAULT_SERVO_POS);
 
-  leftWing.attach(RIGHT_WING_SERVO_PIN, 1000, 2000);
+  leftWing.attach(LEFT_WING_SERVO_PIN, 1000, 2000);
   leftWing.write(DEFAULT_SERVO_POS);
 
-  rightElevator.attach(RIGHT_WING_SERVO_PIN, 1000, 2000);
+  rightElevator.attach(RIGHT_ELEVATOR_SERVO_PIN, 1000, 2000);
   rightElevator.write(DEFAULT_SERVO_POS);
 
-  leftElevator.attach(RIGHT_WING_SERVO_PIN, 1000, 2000);
+  leftElevator.attach(LEFT_ELEVATOR_SERVO_PIN, 1000, 2000);
   leftElevator.write(DEFAULT_SERVO_POS);
 
   pinMode(BATTERY_VOLTAGE_PIN, INPUT);
@@ -317,12 +318,17 @@ void loop() {
     switch (sensorsTurn) {
       case 0: // GPS
         if (gps.location.isUpdated()) {
+          lastGPSPacket = millis();
           lat = gps.location.lat();
           lng = gps.location.lng();
           Serial.print("Latitude: ");
           Serial.println(lat, 6);
           Serial.print("Longitude: ");
           Serial.println(lng, 6);
+          if (gps.hdop.isValid()) {
+            //Serial.printf("hdop: %.2f\n", gps.hdop.hdop());
+            gpsPrecision = gps.hdop;
+          }
         }
         break;
     case 1: // Humidity
@@ -387,8 +393,12 @@ void loop() {
 
   calculateRollPitch();
   processRadioController();
-  if (!isRadioRunning(radioValues) || !isLoraRunning()) {
-    switchToFailSafe();
+  if (!isRadioRunning(radioValues) || !isLoraRunning() || !isGPSRunning()) {
+    if (uav_mode == UAV_MODES::failsafe) {
+      updateFailSafeMessage();
+    } else {
+      switchToFailSafe();
+    }
   } else {
     exitFailSafeMode();
   }
@@ -404,7 +414,7 @@ void radioControllerRead() {
     radioBuffer.push(FS_IA6_SERIAL.read());
   }
 
-  Serial.printf("Recieved %d bytes from GPS\n", GPS_SERIAL.available());
+  //Serial.printf("Recieved %d bytes from GPS\n", GPS_SERIAL.available());
   while (GPS_SERIAL.available() > 0) {
     gps.encode(GPS_SERIAL.read());
   }
