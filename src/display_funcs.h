@@ -1,10 +1,11 @@
 #pragma once
 #include <U8g2lib.h>
+#include <TinyGPS++.h>
 
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 void printTextOverflow(const char *msg, int xloc, int yloc);
 
-void displaySensorData(float temp, float hum, float pressure, float azimuth, bool isControllerArmed, double lat, double lng) {
+void displaySensorData(float temp, float hum, float pressure, float azimuth, double lat, double lng, TinyGPSDate date, TinyGPSTime time) {
   u8g2.clearBuffer(); // Clear the internal memory of the display
   
   u8g2.setFont(u8g2_font_profont10_mr);
@@ -30,8 +31,7 @@ void displaySensorData(float temp, float hum, float pressure, float azimuth, boo
   u8g2.print(lng, 6);
   
   u8g2.setCursor(0, 40);
-  u8g2.print("Controller: ");
-  u8g2.println(isControllerArmed ? "Armed" : "Not Armed");
+  u8g2.printf("%d/%d/%d %d:%d:%d", date.year(), date.month(), date.day(), time.hour() + 3, time.minute(), time.second());
   
   u8g2.setCursor(0, 50);
   u8g2.print("Azimuth: ");

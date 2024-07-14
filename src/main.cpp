@@ -274,23 +274,6 @@ void setup() {
     while (1) ;
   }
 
-  int sensors_file_name_index = 0;
-  do {
-    std::ostringstream filepath;
-    filepath << "sensors-" << sensors_file_name_index << ".txt";
-    if (!SD.exists(filepath.str().c_str())) {
-      sensorsFile = SD.open(filepath.str().c_str(), FILE_WRITE);
-      break;
-    }
-    sensors_file_name_index++;
-  } while(true);
-  if (!sensorsFile) {
-    Serial.println("Couldn't open the sensors file for writing!");
-    displayError("Couldn't open the sensors file!");
-    while (1) ;
-  }
-  Serial.println("Initialized the SD card!");
-
   transitionTimer.priority(0); // has the highest priority, as it is the most important
   pinMode(STEPPER_MOTOR_PULSE_PIN, OUTPUT);
   pinMode(STEPPER_MOTOR_EN_PIN, OUTPUT);
@@ -314,6 +297,28 @@ void setup() {
   }
   lastLoraPacket = millis();
 
+  displayBigMessage("..Waiting GPS clock..");
+  while (!gps.time.isValid() || !gps.time.isUpdated()) {
+    while (GPS_SERIAL.available() > 0) {
+    gps.encode(GPS_SERIAL.read());
+    if (gps.location.isUpdated()) {
+      lastGPSPacket = millis();
+    }
+  }
+  }
+  std::ostringstream filepath;
+  filepath << "sensors " << static_cast<int>(gps.date.year()) << "-" << static_cast<int>(gps.date.month()) << "-" <<
+   static_cast<int>(gps.date.day()) << " " << static_cast<int>(gps.time.hour() + 3) << "-" << static_cast<int>(gps.time.minute())
+    << "-" << static_cast<int>(gps.time.second()) << ".txt";
+  sensorsFile = SD.open(filepath.str().c_str(), FILE_WRITE);
+  Serial.println(filepath.str().c_str());
+  if (!sensorsFile) {
+    Serial.println("Couldn't open the sensors file for writing!");
+    displayError("Couldn't open the sensors file!");
+    while (1) ;
+  }
+  Serial.println("Initialized the SD card!");
+
   displayBigMessage("Finished Initializing");
   delay(2000);
 
@@ -332,7 +337,6 @@ void loop() {
     switch (sensorsTurn) {
       case 0: // GPS
         if (gps.location.isUpdated()) {
-          lastGPSPacket = millis();
           lat = gps.location.lat();
           lng = gps.location.lng();
           Serial.print("Latitude: ");
@@ -374,7 +378,7 @@ void loop() {
       break;
     case 4: // Display update & azimuth calculation
       calculateAzimuth();
-      if (!isFlying()) displaySensorData(temperature, humidity, pressure_mb * MB_TO_PA, azimuth, true, lat, lng);
+      if (!isFlying()) displaySensorData(temperature, humidity, pressure_mb * MB_TO_PA, azimuth, lat, lng, gps.date, gps.time);
       break;
     case 5: // flush all the files to SD card!
       batt_voltage = (analogRead(BATTERY_VOLTAGE_PIN) / 1023.0 * 3.3 - 0.07) / 3.3 * 25.2; // 0 - 3.23v -> 0 - 25.2v | R1 = 68K, R2 = 10K
@@ -435,6 +439,9 @@ void radioControllerRead() {
   //Serial.printf("Recieved %d bytes from GPS\n", GPS_SERIAL.available());
   while (GPS_SERIAL.available() > 0) {
     gps.encode(GPS_SERIAL.read());
+    if (gps.location.isUpdated()) {
+      lastGPSPacket = millis();
+    }
   }
 }
 
