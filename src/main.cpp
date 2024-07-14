@@ -46,6 +46,12 @@
 #define STEPPER_MOTOR_DIR_PIN 31
 #define STEPPER_MOTOR_EN_PIN 32
 
+#define BOMB1_LOCK_SERVO_PIN 7
+#define BOMB2_LOCK_SERVO_PIN 6
+
+#define BOMB_LOCK_OPEN 1000
+#define BOMB_LOCK_CLOSED 2000
+
 struct FeedbackPacket {
   char start = '\0';
   uint8_t latBefore;
@@ -86,6 +92,9 @@ TinyGPSPlus gps;
 double lat, lng;
 TinyGPSHDOP gpsPrecision;
 
+PWMServo bomb1Lock;
+PWMServo bomb2Lock;
+
 MechaQMC5883 qmc;
 
 bfs::Ms4525do airSpeedSensor;
@@ -94,7 +103,6 @@ const float avg_diff_pres_offset = 128; // in pascals
 HTU21D htu;
 
 double temperature, humidity, delta_pressure, delta_pressure_old = 0, air_density, air_speed;
-float batt_voltage = 0;
 
 #define IBUS_BUFFSIZE 32    
 #define IBUS_MAXCHANNELS 6
@@ -159,6 +167,12 @@ void setup() {
 
   leftElevator.attach(LEFT_ELEVATOR_SERVO_PIN, 1000, 2000);
   leftElevator.write(DEFAULT_SERVO_POS);
+
+  bomb1Lock.attach(BOMB1_LOCK_SERVO_PIN, 1000, 2000);
+  bomb1Lock.write(BOMB_LOCK_OPEN);
+
+  bomb2Lock.attach(BOMB2_LOCK_SERVO_PIN, 1000, 2000);
+  bomb2Lock.write(BOMB_LOCK_OPEN);
 
   pinMode(BATTERY_VOLTAGE_PIN, INPUT);
 
@@ -376,6 +390,10 @@ void loop() {
     if (sensorsTurn == 7) {
       sensorsTurn = 0;
     }
+  }
+
+  if (isFlying() && isBatteryVoltageLow()) {
+    switchToFailSafe();
   }
 
   if (uav_mode == UAV_MODES::idle) { // in idle mode, we use the first 4 channels to test the controller and the surface control!
