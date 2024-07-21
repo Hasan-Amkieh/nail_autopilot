@@ -111,7 +111,7 @@ uint8_t* buff = (uint8_t*)malloc(28);
 
 static uint8_t ibusIndex = 0;
 static uint8_t ibus[IBUS_BUFFSIZE] = {0};
-static uint16_t radioValues[IBUS_MAXCHANNELS];
+static uint16_t radioValues[IBUS_MAXCHANNELS] = {2000};
 IntervalTimer radioControllerTimer;
 void radioControllerRead();
 void processRadioController();
@@ -436,7 +436,12 @@ void loop() {
 
   calculateRollPitch();
   processRadioController();
-  if (!isRadioRunning(radioValues) || !isLoraRunning() || !isGPSRunning()) {
+  if (idleModeRadioLock && radioValues[0] >= 1450 && radioValues[0] <= 1550 && radioValues[1] >= 1450 && radioValues[1] <= 1550
+  && radioValues[3] >= 1450 && radioValues[3] <= 1550 && radioValues[2] <= 1020 && radioValues[4] == 1000 && radioValues[5] == 1000) {
+    idleModeRadioLock = false;
+  }
+
+  if (!isRadioRunning(radioValues) || !isLoraRunning() || !isGPSRunning() || isRadioLock()) {
     if (uav_mode == UAV_MODES::failsafe) {
       updateFailSafeMessage();
     } else {

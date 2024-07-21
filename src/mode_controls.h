@@ -13,9 +13,11 @@ enum UAV_MODES {
 const int failsafe_values[6] = {1009, 1002, 1001, 1016, 1000, 1000};
 UAV_MODES uav_mode = UAV_MODES::idle;
 uint32_t lastRadioPacket = 0, lastLoraPacket = 0, lastGPSPacket = 0;
-UAV_MODES prevMode = UAV_MODES::idle;
-bool isRadioOn = true, isLoraOn = true, isGPSOn = true, isBattVoltLow = false;
+UAV_MODES prevMode = UAV_MODES::idle; // stores the previous mode before failsafe was turned on
+bool isRadioOn = true, isLoraOn = true, isGPSOn = true, isBattVoltLow = false, isRadioLocked = true;
 bool isManual = true;
+
+bool idleModeRadioLock = true;
 
 float batt_voltage = 0;
 
@@ -34,6 +36,9 @@ void switchToFailSafe() {
         } else if (isBattVoltLow) {
             Serial.println("WARNING: Switching to failsafe mode\n\tBattery voltage is LOW!");
             displayError("Switching to failsafe mode, Battery voltage is LOW!");
+        } else if (isRadioLocked) {
+            Serial.println("WARNING: Switching to failsafe mode\n\tSet the radio controller values down!");
+            displayError("Switching to failsafe mode, set the radio values down!");
         }
         prevMode = uav_mode;
         uav_mode = UAV_MODES::failsafe;
@@ -48,6 +53,13 @@ bool isGPSRunning() {
 
 }
 
+bool isRadioLock() {
+
+    isRadioLocked = (uav_mode == UAV_MODES::idle || (uav_mode == UAV_MODES::failsafe && prevMode == UAV_MODES::idle)) && idleModeRadioLock;
+    return isRadioLocked;
+
+}
+
 void updateFailSafeMessage() {
 
     if (uav_mode == UAV_MODES::failsafe) {
@@ -59,6 +71,8 @@ void updateFailSafeMessage() {
             displayError("Switching to failsafe mode, no GPS signal!");
         } else if (isBattVoltLow) {
             displayError("Switching to failsafe mode, Battery voltage is LOW!");
+        } else if (isRadioLocked) {
+            displayError("Switching to failsafe mode, set the radio values down!");
         }
     }
 
