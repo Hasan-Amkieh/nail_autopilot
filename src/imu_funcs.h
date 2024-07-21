@@ -33,21 +33,21 @@ float yaw;
 float azimuth = 0, old_azimuth;
 float mag_x_hor = 0, mag_y_hor = 0;
 
-const float hard_iron[3] = {
+const double hard_iron[3] = {
   0.8049999999999997, 10.829999999999998, -4.18
 };
 
 float low_pass_filter(float old_val, float new_val) {
-  return old_val * 0.8 + new_val * 0.2;
+  return old_val * 0.6 + new_val * 0.4;
 }
 
-float convertRawGyro(int gRaw) {
+inline float convertRawGyro(int gRaw) {
   // ex) if the range is +/-500 deg/s: +/-32768/500 = +/-65.536 LSB/(deg/s)
   float lsb_omega = float(0x7FFF) / GYRO_RANGE;
   return gRaw / lsb_omega;  // deg/sec
 }
 
-float convertRawAccel(int aRaw) {
+inline float convertRawAccel(int aRaw) {
   // ex) if the range is +/-2g ; +/-32768/2 = +/-16384 LSB/g
   float lsb_g = float(0x7FFF) / ACCL_RANGE;
   return aRaw / lsb_g;
@@ -82,7 +82,7 @@ void calculateRollPitch() {
   uint32_t duration = cur_micros - last_micros;
   last_micros = cur_micros;
   double dt = duration / 1000000.0; // us->s
-  //Serial.printf("dt: %.3f\n", dt);
+  //if (duration > 50000) return; // if more than 50 ms has passed, then the gyro reading becomes bad, thus it must be restarted
 
   gyro_roll  += omega_roll  * dt; 
   gyro_pitch += omega_pitch * dt;
@@ -90,6 +90,8 @@ void calculateRollPitch() {
   
   kalm_roll  = kalmanRoll.getAngle(accl_roll, omega_roll, dt);
   kalm_pitch = kalmanPitch.getAngle(accl_pitch, omega_pitch, dt);
+
+  //Serial.printf("%2f,%2f,%2f\n", accX, gyro_roll, accY);
 
 }
 
@@ -113,7 +115,7 @@ void calculateAzimuth() {
   float y = raw_y / SENITIVITY_2G;
   float z = raw_z / SENITIVITY_2G;
 
-  float mag_data[3] = {x, y, z};
+  double mag_data[3] = {x, y, z};
   for (uint8_t i = 0 ; i < 3 ; i++) {
     mag_data[i] = mag_data[i] - hard_iron[i];
   }

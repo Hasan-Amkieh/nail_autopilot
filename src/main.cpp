@@ -146,10 +146,10 @@ void setup() {
 
   FS_IA6_SERIAL.begin(115200);
 
-  rightFirstM.attach(RIGHT_FIRST_MOTOR_PIN, 1000, 2000);
-  rightLastM.attach(RIGHT_LAST_MOTOR_PIN, 1000, 2000);
-  leftFirstM.attach(LEFT_FIRST_MOTOR_PIN, 1000, 2000);
-  leftLastM.attach(LEFT_LAST_MOTOR_PIN, 1000, 2000);
+  rightFirstM.attach(RIGHT_FIRST_MOTOR_PIN, 1500, 2000);
+  rightLastM.attach(RIGHT_LAST_MOTOR_PIN, 1500, 2000);
+  leftFirstM.attach(LEFT_FIRST_MOTOR_PIN, 1500, 2000);
+  leftLastM.attach(LEFT_LAST_MOTOR_PIN, 1500, 2000);
 
   rightFirstM.write(0);
   rightLastM.write(0);
@@ -401,10 +401,31 @@ void loop() {
   }
 
   if (uav_mode == UAV_MODES::idle) { // in idle mode, we use the first 4 channels to test the controller and the surface control!
-    rightWing.write(DEFAULT_SERVO_POS + map((double)radioValues[0], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE);
-    leftWing.write(DEFAULT_SERVO_POS +  map((double)radioValues[1], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE);
-    rightElevator.write(DEFAULT_SERVO_POS + map((double)radioValues[2], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE);
-    leftElevator.write(DEFAULT_SERVO_POS + map((double)radioValues[3], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE);
+    surface_controls[0] = DEFAULT_SERVO_POS + map((double)radioValues[0], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE;
+    surface_controls[1] = surface_controls[0];
+    surface_controls[2] = DEFAULT_SERVO_POS + map((double)radioValues[1], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE;
+    surface_controls[3] = surface_controls[2];
+    surfaceControlsUpdate();
+
+    motor_throttles[0] = map(radioValues[2], 1000, 2000, 0, 180);
+    if (motor_throttles[0] > 36) { // equivalent to 20% throttle
+      motor_throttles[0] = 36;
+    }
+    motor_throttles[1] = motor_throttles[0];
+    motor_throttles[2] = motor_throttles[0];
+    motor_throttles[3] = motor_throttles[0];
+    throttleUpdate();
+
+    if (radioValues[5] == 1500) {
+      bomb1Lock.write(180);
+      bomb2Lock.write(0);
+    } else if (radioValues[5] == 2000) {
+      bomb1Lock.write(180);
+      bomb2Lock.write(180);
+    } else {
+      bomb1Lock.write(0);
+      bomb2Lock.write(0);
+    }
   } else if (uav_mode == UAV_MODES::vtol) {
     ;
   } else if (uav_mode == UAV_MODES::fixed_wing) {
@@ -428,7 +449,7 @@ void loop() {
   Serial.print(millis() - start);
   Serial.println(" ms");
 
-  delay(100);
+  //delay(100);
 }
 
 void radioControllerRead() {
@@ -475,10 +496,10 @@ void processLora() {
   packet.lngBefore = (uint8_t)lng;
   doubleToDecimals(lat, packet.latAfter);
   doubleToDecimals(lng, packet.lngAfter);
-  packet.m1_throttle = 0;
-  packet.m2_throttle = 0;
-  packet.m3_throttle = 0;
-  packet.m4_throttle = 0;
+  packet.m1_throttle = map(motor_throttles[0], 0, 180, 0, 100);
+  packet.m2_throttle = map(motor_throttles[1], 0, 180, 0, 100);
+  packet.m3_throttle = map(motor_throttles[2], 0, 180, 0, 100);
+  packet.m4_throttle = map(motor_throttles[3], 0, 180, 0, 100);
   packet.batt_volt = batt_voltage;
   packet.roll = kalm_roll;
   packet.pitch = kalm_pitch;

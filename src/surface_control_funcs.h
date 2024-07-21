@@ -25,6 +25,36 @@ PWMServo rightLastM;
 PWMServo leftFirstM;
 PWMServo leftLastM;
 
+/*
+0 - first right
+1 - last right
+2 - first left
+3 - last left
+*/
+uint16_t motor_throttles[4] = {0}; // ranges between 0 and 180
+
+/*
+0 - right aileron
+1 - left aileron
+2 - right elevator
+3 - left elevator
+*/
+uint16_t surface_controls[4] = {0}; // ranges between 0 and 180
+
+void throttleUpdate() {
+    rightFirstM.write(motor_throttles[0]);
+    rightLastM.write(motor_throttles[1]);
+    leftFirstM.write(motor_throttles[2]);
+    leftLastM.write(motor_throttles[3]);
+}
+
+void surfaceControlsUpdate() {
+    rightWing.write(surface_controls[0]);
+    leftWing.write(surface_controls[1]);
+    rightElevator.write(surface_controls[2]);
+    leftElevator.write(surface_controls[3]);
+}
+
 void testAllServoMotors() {
 
     rightWing.write(DEFAULT_SERVO_POS + MAX_SURFACE_CONTROL_ANGLE);
