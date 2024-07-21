@@ -1,3 +1,4 @@
+#pragma once
 #include <BMI160Gen.h>
 #include <Kalman.h>
 #include <SPI.h>
@@ -16,7 +17,17 @@
 
 #define BMI160_CS_PIN 10
 
+#define B_GYRO 0.1
+
 const SPISettings bmi160_settings = SPISettings(1000000, MSBFIRST, SPI_MODE0);
+
+float omega_roll  = 0;
+float omega_pitch = 0;
+float omega_yaw   = 0;
+
+float omega_roll_prev  = 0;
+float omega_pitch_prev = 0;
+float omega_yaw_prev   = 0;
 
 static float gyro_roll = 0, gyro_pitch = 0, gyro_yaw = 0;
 static uint32_t last_micros = 0;
@@ -74,9 +85,18 @@ void calculateRollPitch() {
   SPI.beginTransaction(bmi160_settings);
   BMI160.readGyro(rawRoll, rawPitch, rawYaw);
   SPI.endTransaction();
-  float omega_roll  = convertRawGyro(rawRoll);
-  float omega_pitch = convertRawGyro(rawPitch);
-  float omega_yaw   = convertRawGyro(rawYaw);
+  omega_roll  = convertRawGyro(rawRoll);
+  omega_pitch = convertRawGyro(rawPitch);
+  omega_yaw   = convertRawGyro(rawYaw);
+  
+  // Lowpass filter:
+  omega_roll = (1.0 - B_GYRO) * omega_roll_prev + B_GYRO * omega_roll;
+  omega_pitch = (1.0 - B_GYRO) * omega_pitch_prev + B_GYRO * omega_pitch;
+  omega_yaw = (1.0 - B_GYRO) * omega_yaw_prev + B_GYRO * omega_yaw;
+
+  omega_roll_prev = omega_roll;
+  omega_pitch_prev = omega_pitch;
+  omega_yaw_prev = omega_yaw;
   
   uint32_t cur_micros = micros();
   uint32_t duration = cur_micros - last_micros;

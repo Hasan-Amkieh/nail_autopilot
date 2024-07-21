@@ -104,17 +104,7 @@ HTU21D htu;
 
 double temperature, humidity, delta_pressure, delta_pressure_old = 0, air_density, air_speed;
 
-#define IBUS_BUFFSIZE 32    
-#define IBUS_MAXCHANNELS 6
-
 uint8_t* buff = (uint8_t*)malloc(28);
-
-static uint8_t ibusIndex = 0;
-static uint8_t ibus[IBUS_BUFFSIZE] = {0};
-static uint16_t radioValues[IBUS_MAXCHANNELS] = {2000};
-IntervalTimer radioControllerTimer;
-void radioControllerRead();
-void processRadioController();
 
 IntervalTimer transitionTimer;
 void transitionSwitch();
@@ -176,7 +166,7 @@ void setup() {
 
   pinMode(BATTERY_VOLTAGE_PIN, INPUT);
 
-  testAllServoMotors();
+  testAllServos();
 
   GPS_SERIAL.begin(9600);
   delay(10);
@@ -327,8 +317,13 @@ void setup() {
   lastRadioPacket = millis();
 }
 
+uint32_t start;
+
 void loop() {
-  auto start = millis();
+  start = micros();
+  prev_time = current_time;      
+  current_time = micros();      
+  dt = (current_time - prev_time) / 1000000.0;
   
   double delat_pressure_sum = 0;
   double last_diff_pres = 0;
@@ -405,7 +400,7 @@ void loop() {
     surface_controls[1] = surface_controls[0];
     surface_controls[2] = DEFAULT_SERVO_POS + map((double)radioValues[1], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE;
     surface_controls[3] = surface_controls[2];
-    surfaceControlsUpdate();
+    commandSurfaceControls();
 
     motor_throttles[0] = map(radioValues[2], 1000, 2000, 0, 180);
     if (motor_throttles[0] > 36) { // equivalent to 20% throttle
@@ -414,7 +409,7 @@ void loop() {
     motor_throttles[1] = motor_throttles[0];
     motor_throttles[2] = motor_throttles[0];
     motor_throttles[3] = motor_throttles[0];
-    throttleUpdate();
+    commandMotors();
 
     if (radioValues[5] == 1500) {
       bomb1Lock.write(180);
@@ -427,7 +422,10 @@ void loop() {
       bomb2Lock.write(0);
     }
   } else if (uav_mode == UAV_MODES::vtol) {
-    ;
+    getDesStateVTOL();
+    controlAngleVTOL();
+    controlMixerVTOL();
+    commandMotors();
   } else if (uav_mode == UAV_MODES::fixed_wing) {
     ;
   } else if (uav_mode == UAV_MODES::failsafe) {
@@ -451,7 +449,7 @@ void loop() {
     exitFailSafeMode();
   }
 
-  Serial.print(millis() - start);
+  Serial.print((micros() - start) / 1000);
   Serial.println(" ms");
 
   //delay(100);
