@@ -66,13 +66,21 @@ float dt = 0.0, current_time = 0.0, prev_time = 0.0;
 float error_roll = 0.0, integral_roll = 0.0, integral_roll_prev = 0.0, derivative_roll = 0.0, roll_PID = 0.0;
 float error_pitch = 0.0, integral_pitch = 0.0, integral_pitch_prev = 0.0, derivative_pitch = 0.0, pitch_PID = 0.0;
 
-float Kp_roll_angle = 0.2;    // Roll P-gain
+/*float Kp_roll_angle = 0.2;    // Roll P-gain
 float Ki_roll_angle = 0.35;    // Roll I-gain
 float Kd_roll_angle = 0.05;   // Roll D-gain
 
 float Kp_pitch_angle = 0.2;   // Pitch P-gain
 float Ki_pitch_angle = 0.35;   // Pitch I-gain
-float Kd_pitch_angle = 0.05;  // Pitch D-gain
+float Kd_pitch_angle = 0.05;  // Pitch D-gain*/
+
+float Kp_roll_angle = 0.0;    // Roll P-gain
+float Ki_roll_angle = 0.0;    // Roll I-gain
+float Kd_roll_angle = 0.0;   // Roll D-gain
+
+float Kp_pitch_angle = 0.0;   // Pitch P-gain
+float Ki_pitch_angle = 0.0;   // Pitch I-gain
+float Kd_pitch_angle = 0.0;  // Pitch D-gain
 
 float Kp_yaw = 0.0;           // Yaw P-gain
 float Ki_yaw = 0.0;          // Yaw I-gain
@@ -183,6 +191,83 @@ void controlAngleVTOL() {
 }
 
 void controlMixerVTOL() {
+   
+  motor_throttles[2] = (throttle_des + pitch_PID - roll_PID) * 180; // first left
+  motor_throttles[0] = (throttle_des + pitch_PID + roll_PID) * 180; // first right
+  motor_throttles[1] = (throttle_des - pitch_PID + roll_PID) * 180; // last right
+  motor_throttles[3] = (throttle_des - pitch_PID - roll_PID) * 180; // last left
+
+  /*
+  m1_command_scaled = throttle_des - pitch_PID + roll_PID + yaw_PID; // first left
+  m2_command_scaled = throttle_des - pitch_PID - roll_PID - yaw_PID; // first right
+  m3_command_scaled = throttle_des + pitch_PID - roll_PID + yaw_PID; // last right
+  m4_command_scaled = throttle_des + pitch_PID + roll_PID - yaw_PID; // last left
+  */
+ 
+}
+
+void getDesStateFW() {
+  throttle_des = (radioValues[2] - 1000.0) / 1000.0; // Between 0 and 1
+  roll_des = (radioValues[3] - 1500.0) / 500.0; // Between -1 and 1
+  pitch_des = (radioValues[1] - 1500.0) / 500.0; // Between -1 and 1
+  yaw_des = (radioValues[0] - 1500.0) / 500.0; // Between -1 and 1
+  roll_passthru = roll_des / 2.0; // Between -0.5 and 0.5
+  pitch_passthru = pitch_des / 2.0; // Between -0.5 and 0.5
+  yaw_passthru = yaw_des / 2.0; // Between -0.5 and 0.5
+  
+  //Constrain within normalized bounds
+  throttle_des = constrain(throttle_des, 0.0, 1.0); //Between 0 and 1
+  roll_des = constrain(roll_des, -1.0, 1.0) * MAX_ROLL_VTOL; //Between -maxRoll and +maxRoll
+  pitch_des = constrain(pitch_des, -1.0, 1.0) * MAX_PITCH_VTOL; //Between -maxPitch and +maxPitch
+  yaw_des = constrain(yaw_des, -1.0, 1.0) * MAX_YAW_VTOL; //Between -maxYaw and +maxYaw
+  roll_passthru = constrain(roll_passthru, -0.5, 0.5);
+  pitch_passthru = constrain(pitch_passthru, -0.5, 0.5);
+  yaw_passthru = constrain(yaw_passthru, -0.5, 0.5);
+}
+
+void controlAngleFW() {
+  
+  //Roll
+  error_roll = roll_des - kalm_roll;
+  integral_roll = integral_roll_prev + error_roll * dt;
+  if (radioValues[2] < 1060) {   // Don't let integrator build if throttle is too low
+    integral_roll = 0;
+  }
+  integral_roll = constrain(integral_roll, -I_LIMIT, I_LIMIT); // Saturate integrator to prevent unsafe buildup
+  derivative_roll = omega_roll;
+  roll_PID = 0.01 * (Kp_roll_angle * error_roll + Ki_roll_angle * integral_roll - Kd_roll_angle * derivative_roll); //Scaled by .01 to bring within -1 to 1 range
+
+  //Pitch
+  error_pitch = pitch_des - kalm_pitch;
+  integral_pitch = integral_pitch_prev + error_pitch * dt;
+  if (radioValues[2] < 1060) {   // Don't let integrator build if throttle is too low
+    integral_pitch = 0;
+  }
+  integral_pitch = constrain(integral_pitch, -I_LIMIT, I_LIMIT); // Saturate integrator to prevent unsafe buildup
+  derivative_pitch = omega_pitch;
+  pitch_PID = .01 * (Kp_pitch_angle * error_pitch + Ki_pitch_angle * integral_pitch - Kd_pitch_angle * derivative_pitch); //Scaled by .01 to bring within -1 to 1 range
+
+  // Yaw, stablize on rate from GyroZ
+  /*error_yaw = yaw_des - GyroZ;
+  integral_yaw = integral_yaw_prev + error_yaw*dt;
+  if (channel_1_pwm < 1060) {   //Don't let integrator build if throttle is too low
+    integral_yaw = 0;
+  }
+  integral_yaw = constrain(integral_yaw, -I_LIMIT, I_LIMIT); // Saturate integrator to prevent unsafe buildup
+  derivative_yaw = (error_yaw - error_yaw_prev)/dt; 
+  yaw_PID = .01*(Kp_yaw*error_yaw + Ki_yaw*integral_yaw + Kd_yaw*derivative_yaw); //Scaled by .01 to bring within -1 to 1 range
+  */
+
+  //Update roll variables
+  integral_roll_prev = integral_roll;
+  //Update pitch variables
+  integral_pitch_prev = integral_pitch;
+  //Update yaw variables
+  //error_yaw_prev = error_yaw;
+  //integral_yaw_prev = integral_yaw;
+}
+
+void controlMixerFW() {
    
   motor_throttles[2] = (throttle_des - pitch_PID + roll_PID) * 180; // first left
   motor_throttles[0] = (throttle_des - pitch_PID - roll_PID) * 180; // first right

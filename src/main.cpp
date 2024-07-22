@@ -98,13 +98,13 @@ PWMServo bomb2Lock;
 MechaQMC5883 qmc;
 
 bfs::Ms4525do airSpeedSensor;
-const float avg_diff_pres_offset = 128; // in pascals
+float avg_diff_pres_offset = 0; // in pascals
 
 HTU21D htu;
 
 double temperature, humidity, delta_pressure, delta_pressure_old = 0, air_density, air_speed;
 
-uint8_t* buff = (uint8_t*)malloc(28);
+uint8_t* buff = (uint8_t*)malloc(3);
 
 IntervalTimer transitionTimer;
 void transitionSwitch();
@@ -242,7 +242,15 @@ void setup() {
     displayError("Couldn't find Air speed!");
     while(1){}
   }
-  Serial.println("Initialized Airspeed sensor!");
+  float last_diff_pres = 0, delat_pressure_sum = 0;
+  for (int i = 0 ; i < 100 ; i++) {
+    if (airSpeedSensor.Read()) {
+      last_diff_pres = airSpeedSensor.pres_pa();
+    }
+    delat_pressure_sum += last_diff_pres;
+  }
+  avg_diff_pres_offset = delat_pressure_sum / 100.0;
+  Serial.printf("Initialized Airspeed sensor!delta pressure offset: %2f\n", avg_diff_pres_offset);
 
   htu.begin();
   htu.setResolution(HTU21DResolution::RESOLUTION_RH11_T11);
@@ -362,7 +370,7 @@ void loop() {
         }
         delat_pressure_sum += last_diff_pres;
       }
-      delta_pressure = low_pass_filter(delta_pressure_old, delat_pressure_sum / 10 + avg_diff_pres_offset);
+      delta_pressure = low_pass_filter(delta_pressure_old, delat_pressure_sum / 10 - avg_diff_pres_offset);
       delta_pressure_old = delta_pressure;
       if (delta_pressure > 0) {
         delta_pressure = 0;
@@ -391,11 +399,14 @@ void loop() {
     }
   }
 
-  if (isFlying() && isBatteryVoltageLow()) {
+// TODO:
+  /*if (isFlying() && isBatteryVoltageLow()) {
     switchToFailSafe();
-  }
+  }*/
 
-  if (uav_mode == UAV_MODES::idle) { // in idle mode, we use the first 4 channels to test the controller and the surface control!
+  calculateRollPitch();
+
+  if (uav_mode == UAV_MODES::idle) { // in idle mode, we use the 6 channels to test the controller and the surface control!
     surface_controls[0] = DEFAULT_SERVO_POS + map((double)radioValues[0], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE;
     surface_controls[1] = surface_controls[0];
     surface_controls[2] = DEFAULT_SERVO_POS + map((double)radioValues[1], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE;
@@ -427,12 +438,30 @@ void loop() {
     controlMixerVTOL();
     commandMotors();
   } else if (uav_mode == UAV_MODES::fixed_wing) {
-    ;
+    getDesStateFW();
+    controlAngleFW();
+    controlMixerFW();
+    commandMotors();
   } else if (uav_mode == UAV_MODES::failsafe) {
-    ;
+    if (prevMode == UAV_MODES::idle) {
+      motor_throttles[0] = 0;
+      motor_throttles[1] = 0;
+      motor_throttles[2] = 0;
+      motor_throttles[3] = 0;
+      commandMotors();
+    } else if (prevMode == UAV_MODES::vtol) {
+      // TODO:
+      motor_throttles[0] = 0;
+      motor_throttles[1] = 0;
+      motor_throttles[2] = 0;
+      motor_throttles[3] = 0;
+      commandMotors();
+      
+    } else if (prevMode == UAV_MODES::fixed_wing) {
+      
+    }
   }
 
-  calculateRollPitch();
   processRadioController();
   if (idleModeRadioLock && radioValues[0] >= 1450 && radioValues[0] <= 1550 && radioValues[1] >= 1450 && radioValues[1] <= 1550
   && radioValues[3] >= 1450 && radioValues[3] <= 1550 && radioValues[2] <= 1020 && radioValues[4] == 1000 && radioValues[5] == 1000) {
@@ -510,11 +539,15 @@ void processLora() {
   packet.temp = temperature;
 
   E32_transmitter.sendFixedMessage(CONTROL_STATION_ADDH, CONTROL_STATION_ADDL, CONTROL_STATION_CHANNEL, (uint8_t*)&packet, sizeof(packet));
-  if (E32_receiver.available() >= 28) {
+  if (E32_receiver.available() >= 1) {
     Serial.print("Received packet: ");
-    LORA_RECEIVER_SERIAL.readBytes(buff, 27);
-    Serial.println((char*)buff);
+    LORA_RECEIVER_SERIAL.readBytes(buff, 1);
+    Serial.println(String((char*)buff));
     lastLoraPacket = millis();
+    if (buff[0] == '1' && uav_mode == UAV_MODES::idle) {
+      uav_mode = UAV_MODES::vtol;
+      Serial.println("Switching to VTOL!");
+    }
   }
 }
 

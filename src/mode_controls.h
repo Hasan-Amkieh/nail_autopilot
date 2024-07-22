@@ -48,8 +48,12 @@ void switchToFailSafe() {
 
 bool isGPSRunning() {
 
+    /*TODO:
     isGPSOn = (millis() - lastGPSPacket) < GPS_TIMEOUT;
     return isGPSOn;
+    */
+
+    return true;
 
 }
 
