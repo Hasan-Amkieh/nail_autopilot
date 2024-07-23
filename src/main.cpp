@@ -53,7 +53,7 @@
 #define BOMB_LOCK_CLOSED 2000
 
 struct FeedbackPacket {
-  char start = '\0';
+  char start = 'A';
   uint8_t latBefore;
   char latAfter[6];
   uint8_t lngBefore;
@@ -451,14 +451,13 @@ void loop() {
       commandMotors();
     } else if (prevMode == UAV_MODES::vtol) {
       // TODO:
-      motor_throttles[0] = 0;
+      /*motor_throttles[0] = 0;
       motor_throttles[1] = 0;
       motor_throttles[2] = 0;
-      motor_throttles[3] = 0;
+      motor_throttles[3] = 0;*/
       commandMotors();
-      
     } else if (prevMode == UAV_MODES::fixed_wing) {
-      
+      ;
     }
   }
 
@@ -466,6 +465,10 @@ void loop() {
   if (idleModeRadioLock && radioValues[0] >= 1450 && radioValues[0] <= 1550 && radioValues[1] >= 1450 && radioValues[1] <= 1550
   && radioValues[3] >= 1450 && radioValues[3] <= 1550 && radioValues[2] <= 1020 && radioValues[4] == 1000 && radioValues[5] == 1000) {
     idleModeRadioLock = false;
+  }
+  if (vtolModeRadioLock && radioValues[0] >= 1450 && radioValues[0] <= 1550 && radioValues[1] >= 1450 && radioValues[1] <= 1550
+  && radioValues[3] >= 1450 && radioValues[3] <= 1550 && radioValues[2] <= 1020 && radioValues[4] == 1000 && radioValues[5] == 1000) {
+    vtolModeRadioLock = false;
   }
 
   if (!isRadioRunning(radioValues) || !isLoraRunning() || !isGPSRunning() || isRadioLock()) {
@@ -539,14 +542,27 @@ void processLora() {
   packet.temp = temperature;
 
   E32_transmitter.sendFixedMessage(CONTROL_STATION_ADDH, CONTROL_STATION_ADDL, CONTROL_STATION_CHANNEL, (uint8_t*)&packet, sizeof(packet));
-  if (E32_receiver.available() >= 1) {
+  if (LORA_RECEIVER_SERIAL.available() >= 1) {
     Serial.print("Received packet: ");
     LORA_RECEIVER_SERIAL.readBytes(buff, 1);
     Serial.println(String((char*)buff));
     lastLoraPacket = millis();
     if (buff[0] == '1' && uav_mode == UAV_MODES::idle) {
       uav_mode = UAV_MODES::vtol;
+      isRadioLockedVTOL = true;
+      vtolModeRadioLock = true;
       Serial.println("Switching to VTOL!");
+    }
+    if (buff[0] == '3' && isFlying()) {
+      bomb1Lock.write(180);
+      Serial.println("Dropping first bomb!");
+    }
+    if (buff[0] == '4' && isFlying()) {
+      bomb2Lock.write(180);
+      Serial.println("Dropping second bomb!");
+    }
+    if (buff[0] == '5' && isFlying()) {
+      Serial.println("switching to manual mode!");
     }
   }
 }

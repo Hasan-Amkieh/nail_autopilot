@@ -2,7 +2,7 @@
 #include <display_funcs.h>
 
 #define RADIO_TIMEOUT 4000
-#define LORA_TIMEOUT 10000
+#define LORA_TIMEOUT 1000000 // 10000
 #define GPS_TIMEOUT 3000
 #define BATTERY_VOLTAGE_MINIMUM 20.0 // which is equivalent to 3.3 volts per cell, around 15% remaining, as the stepper motor driver requires 20V minimum
 
@@ -14,10 +14,10 @@ const int failsafe_values[6] = {1009, 1002, 1001, 1016, 1000, 1000};
 UAV_MODES uav_mode = UAV_MODES::idle;
 uint32_t lastRadioPacket = 0, lastLoraPacket = 0, lastGPSPacket = 0;
 UAV_MODES prevMode = UAV_MODES::idle; // stores the previous mode before failsafe was turned on
-bool isRadioOn = true, isLoraOn = true, isGPSOn = true, isBattVoltLow = false, isRadioLocked = true;
+bool isRadioOn = true, isLoraOn = true, isGPSOn = true, isBattVoltLow = false, isRadioLockedIdle = true, isRadioLockedVTOL = false;
 bool isManual = true;
 
-bool idleModeRadioLock = true;
+bool idleModeRadioLock = true, vtolModeRadioLock = false;
 
 float batt_voltage = 0;
 
@@ -36,7 +36,7 @@ void switchToFailSafe() {
         } else if (isBattVoltLow) {
             Serial.println("WARNING: Switching to failsafe mode\n\tBattery voltage is LOW!");
             displayError("Switching to failsafe mode, Battery voltage is LOW!");
-        } else if (isRadioLocked) {
+        } else if (isRadioLockedIdle || isRadioLockedVTOL) {
             Serial.println("WARNING: Switching to failsafe mode\n\tSet the radio controller values down!");
             displayError("Switching to failsafe mode, set the radio values down!");
         }
@@ -59,8 +59,9 @@ bool isGPSRunning() {
 
 bool isRadioLock() {
 
-    isRadioLocked = (uav_mode == UAV_MODES::idle || (uav_mode == UAV_MODES::failsafe && prevMode == UAV_MODES::idle)) && idleModeRadioLock;
-    return isRadioLocked;
+    isRadioLockedIdle = (uav_mode == UAV_MODES::idle || (uav_mode == UAV_MODES::failsafe && prevMode == UAV_MODES::idle)) && idleModeRadioLock;
+    isRadioLockedVTOL = (uav_mode == UAV_MODES::vtol || (uav_mode == UAV_MODES::failsafe && prevMode == UAV_MODES::vtol)) && vtolModeRadioLock;
+    return isRadioLockedIdle || isRadioLockedVTOL;
 
 }
 
@@ -75,7 +76,7 @@ void updateFailSafeMessage() {
             displayError("Switching to failsafe mode, no GPS signal!");
         } else if (isBattVoltLow) {
             displayError("Switching to failsafe mode, Battery voltage is LOW!");
-        } else if (isRadioLocked) {
+        } else if (isRadioLockedIdle || isRadioLockedVTOL) {
             displayError("Switching to failsafe mode, set the radio values down!");
         }
     }
@@ -86,6 +87,7 @@ void exitFailSafeMode() {
 
     if (uav_mode == UAV_MODES::failsafe) {
         uav_mode = prevMode;
+        displayBigMessage("Exited failsafe mode!");
     }
 
 }

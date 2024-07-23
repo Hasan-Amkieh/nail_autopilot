@@ -66,21 +66,13 @@ float dt = 0.0, current_time = 0.0, prev_time = 0.0;
 float error_roll = 0.0, integral_roll = 0.0, integral_roll_prev = 0.0, derivative_roll = 0.0, roll_PID = 0.0;
 float error_pitch = 0.0, integral_pitch = 0.0, integral_pitch_prev = 0.0, derivative_pitch = 0.0, pitch_PID = 0.0;
 
-/*float Kp_roll_angle = 0.2;    // Roll P-gain
+float Kp_roll_angle = 0.2;    // Roll P-gain
 float Ki_roll_angle = 0.35;    // Roll I-gain
 float Kd_roll_angle = 0.05;   // Roll D-gain
 
 float Kp_pitch_angle = 0.2;   // Pitch P-gain
 float Ki_pitch_angle = 0.35;   // Pitch I-gain
-float Kd_pitch_angle = 0.05;  // Pitch D-gain*/
-
-float Kp_roll_angle = 0.0;    // Roll P-gain
-float Ki_roll_angle = 0.0;    // Roll I-gain
-float Kd_roll_angle = 0.0;   // Roll D-gain
-
-float Kp_pitch_angle = 0.0;   // Pitch P-gain
-float Ki_pitch_angle = 0.0;   // Pitch I-gain
-float Kd_pitch_angle = 0.0;  // Pitch D-gain
+float Kd_pitch_angle = 0.05;  // Pitch D-gain
 
 float Kp_yaw = 0.0;           // Yaw P-gain
 float Ki_yaw = 0.0;          // Yaw I-gain
