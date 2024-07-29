@@ -42,9 +42,11 @@
 #define FS_IA6_SERIAL Serial4
 #define FS_IA6_SERIAL_BUFFER_SIZE 256
 
+#define VTOL_TRANSITION LOW
+#define FW_TRANSITION HIGH
 #define STEPPER_MOTOR_PULSE_PIN 33
-#define STEPPER_MOTOR_DIR_PIN 31
-#define STEPPER_MOTOR_EN_PIN 32
+#define STEPPER_MOTOR_DIR_PIN 31 // LOW to VTOL, HIGH to FW
+//#define STEPPER_MOTOR_EN_PIN 32 // unused, can be used for other stuff
 
 #define BOMB1_LOCK_SERVO_PIN 7
 #define BOMB2_LOCK_SERVO_PIN 6
@@ -54,6 +56,7 @@
 
 struct FeedbackPacket {
   char start = 'A';
+  uint8_t uav_mode = 0; // 0 - idle, 1 - vtol, 2 - fw, 3 - failsafe
   uint8_t latBefore;
   char latAfter[6];
   uint8_t lngBefore;
@@ -102,7 +105,7 @@ float avg_diff_pres_offset = 0; // in pascals
 
 HTU21D htu;
 
-double temperature, humidity, delta_pressure, delta_pressure_old = 0, air_density, air_speed;
+double temperature, humidity, delta_pressure = 0, delta_pressure_old = 0, air_density, air_speed;
 
 uint8_t* buff = (uint8_t*)malloc(3);
 
@@ -136,21 +139,21 @@ void setup() {
 
   FS_IA6_SERIAL.begin(115200);
 
-  rightFirstM.attach(RIGHT_FIRST_MOTOR_PIN, 1500, 2000);
-  rightLastM.attach(RIGHT_LAST_MOTOR_PIN, 1500, 2000);
-  leftFirstM.attach(LEFT_FIRST_MOTOR_PIN, 1500, 2000);
-  leftLastM.attach(LEFT_LAST_MOTOR_PIN, 1500, 2000);
+  rightFirstM.attach(RIGHT_FIRST_MOTOR_PIN, 1490, 2000); // 1500 - 10 (for safety)
+  rightLastM.attach(RIGHT_LAST_MOTOR_PIN, 1500, 2000); // 1500 - 10 (for safety)
+  leftFirstM.attach(LEFT_FIRST_MOTOR_PIN, 1495, 2000); // 1500 - 10 (for safety)
+  leftLastM.attach(LEFT_LAST_MOTOR_PIN, 1500, 2000); // 1500 - 10 (for safety)
 
   rightFirstM.write(0);
   rightLastM.write(0);
   leftFirstM.write(0);
   leftLastM.write(0);
 
-  rightWing.attach(RIGHT_WING_SERVO_PIN, 1000, 2000);
-  rightWing.write(DEFAULT_SERVO_POS);
+  rightWingAil.attach(RIGHT_WING_SERVO_PIN, 1000, 2000);
+  rightWingAil.write(DEFAULT_SERVO_POS);
 
-  leftWing.attach(LEFT_WING_SERVO_PIN, 1000, 2000);
-  leftWing.write(DEFAULT_SERVO_POS);
+  leftWingAil.attach(LEFT_WING_SERVO_PIN, 1000, 2000);
+  leftWingAil.write(DEFAULT_SERVO_POS);
 
   rightElevator.attach(RIGHT_ELEVATOR_SERVO_PIN, 1000, 2000);
   rightElevator.write(DEFAULT_SERVO_POS);
@@ -236,7 +239,7 @@ void setup() {
   gyro_roll = roll;
   gyro_pitch = pitch;
 
-  airSpeedSensor.Config(&Wire, 0x28, 1.0f, -1.0f);
+  /*airSpeedSensor.Config(&Wire, 0x28, 1.0f, -1.0f);
   if (!airSpeedSensor.Begin()) {
     Serial.println("Couldn't find Air speed!");
     displayError("Couldn't find Air speed!");
@@ -250,7 +253,7 @@ void setup() {
     delat_pressure_sum += last_diff_pres;
   }
   avg_diff_pres_offset = delat_pressure_sum / 100.0;
-  Serial.printf("Initialized Airspeed sensor!delta pressure offset: %2f\n", avg_diff_pres_offset);
+  Serial.printf("Initialized Airspeed sensor!delta pressure offset: %2f\n", avg_diff_pres_offset);*/
 
   htu.begin();
   htu.setResolution(HTU21DResolution::RESOLUTION_RH11_T11);
@@ -274,9 +277,16 @@ void setup() {
 
   transitionTimer.priority(0); // has the highest priority, as it is the most important
   pinMode(STEPPER_MOTOR_PULSE_PIN, OUTPUT);
-  pinMode(STEPPER_MOTOR_EN_PIN, OUTPUT);
   pinMode(STEPPER_MOTOR_DIR_PIN, OUTPUT);
-  digitalWrite(STEPPER_MOTOR_EN_PIN, LOW); // by default the motor is off
+  digitalWrite(STEPPER_MOTOR_PULSE_PIN, LOW);
+
+  /*displayBigMessage("Running steps");
+  while (true) {
+    digitalWrite(STEPPER_MOTOR_DIR_PIN, HIGH);
+    startTransitioning();
+    delay(500);
+    stopTransitioning();
+  }*/
 
   radioControllerTimer.priority(1);
   if (!radioControllerTimer.begin(radioControllerRead, 10000)) {
@@ -364,18 +374,19 @@ void loop() {
       air_density = densityhumidair(pressure_mb * MB_TO_PA, temperature, humidity / 100);
       break;
     case 3: // Airspeed sensor & calculation
-      for (int i = 0 ; i < 10 ; i++) {
+      /*for (int i = 0 ; i < 10 ; i++) {
         if (airSpeedSensor.Read()) {
           last_diff_pres = airSpeedSensor.pres_pa();
         }
         delat_pressure_sum += last_diff_pres;
       }
       delta_pressure = low_pass_filter(delta_pressure_old, delat_pressure_sum / 10 - avg_diff_pres_offset);
-      delta_pressure_old = delta_pressure;
+      delta_pressure_old = delta_pressure;*/
       if (delta_pressure > 0) {
         delta_pressure = 0;
       }
-      air_speed = pow((2 * abs(delta_pressure)) / air_density, 0.5);
+      //air_speed = pow((2 * abs(delta_pressure)) / air_density, 0.5);
+      air_speed = 0;
       Serial.printf("%.2f delta pres, Humidity: %.2f, Temperature: %.2f, Pressure: %.2f, Air Density: %.3f kg/m^3, air speed: %.2f m/s, altitude: %.2f\n",
        delta_pressure, humidity, temperature, pressure_mb * MB_TO_PA, air_density, air_speed, altitude);
       break;
@@ -384,7 +395,7 @@ void loop() {
       if (!isFlying()) displaySensorData(temperature, humidity, pressure_mb * MB_TO_PA, azimuth, lat, lng, gps.date, gps.time);
       break;
     case 5: // flush all the files to SD card!
-      batt_voltage = (analogRead(BATTERY_VOLTAGE_PIN) / 1023.0 * 3.3 - 0.07) / 3.3 * 25.2; // 0 - 3.23v -> 0 - 25.2v | R1 = 68K, R2 = 10K
+      batt_voltage = (analogRead(BATTERY_VOLTAGE_PIN) / 1023.0 * 3.3 - 0.07) / 3.3 * 25.2 + 1; // 0 - 3.23v -> 0 - 25.2v | R1 = 68K, R2 = 10K
       sensorsFile.printf("%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%lf,%lf\n", millis(), temperature, pressure_mb * MB_TO_PA,
        air_density, humidity, altitude, air_speed, azimuth, batt_voltage, lat, lng);
       sensorsFile.flush();
@@ -399,10 +410,9 @@ void loop() {
     }
   }
 
-// TODO:
-  /*if (isFlying() && isBatteryVoltageLow()) {
+  if (isFlying() && isBatteryVoltageLow()) {
     switchToFailSafe();
-  }*/
+  }
 
   calculateRollPitch();
 
@@ -442,6 +452,9 @@ void loop() {
     controlAngleFW();
     controlMixerFW();
     commandMotors();
+  } else if (uav_mode == UAV_MODES::transitioning) {
+    // TODO:
+    ;
   } else if (uav_mode == UAV_MODES::failsafe) {
     if (prevMode == UAV_MODES::idle) {
       motor_throttles[0] = 0;
@@ -451,10 +464,10 @@ void loop() {
       commandMotors();
     } else if (prevMode == UAV_MODES::vtol) {
       // TODO:
-      /*motor_throttles[0] = 0;
+      motor_throttles[0] = 0;
       motor_throttles[1] = 0;
       motor_throttles[2] = 0;
-      motor_throttles[3] = 0;*/
+      motor_throttles[3] = 0;
       commandMotors();
     } else if (prevMode == UAV_MODES::fixed_wing) {
       ;
@@ -503,13 +516,11 @@ void radioControllerRead() {
 
 // called when needed to move the stepper motor to start moving to the other mode
 void startTransitioning() {
-  transitionTimer.begin(transitionSwitch, 1000);
-  digitalWrite(STEPPER_MOTOR_EN_PIN, HIGH);
+  transitionTimer.begin(transitionSwitch, 50);
 }
 
 void stopTransitioning() {
   transitionTimer.end();
-  digitalWrite(STEPPER_MOTOR_EN_PIN, LOW);
 }
 
 void transitionSwitch() {
@@ -521,6 +532,7 @@ void transitionSwitch() {
 }
 
 void processLora() {
+  packet.uav_mode = uav_mode;
   packet.airspeed = (float)air_speed;
   packet.altitude = (uint8_t)altitude;
   packet.azimuth = azimuth;
@@ -547,11 +559,17 @@ void processLora() {
     LORA_RECEIVER_SERIAL.readBytes(buff, 1);
     Serial.println(String((char*)buff));
     lastLoraPacket = millis();
-    if (buff[0] == '1' && uav_mode == UAV_MODES::idle) {
+    if (buff[0] == '1' && uav_mode == UAV_MODES::idle) { // autonomous mission command
       uav_mode = UAV_MODES::vtol;
       isRadioLockedVTOL = true;
       vtolModeRadioLock = true;
-      Serial.println("Switching to VTOL!");
+      Serial.println("Switching to VTOL in manual mode!");
+    }
+    if (buff[0] == '2' && uav_mode == UAV_MODES::idle) { // manual mission command
+      uav_mode = UAV_MODES::vtol;
+      isRadioLockedVTOL = true;
+      vtolModeRadioLock = true;
+      Serial.println("Switching to VTOL in manual mode!");
     }
     if (buff[0] == '3' && isFlying()) {
       bomb1Lock.write(180);

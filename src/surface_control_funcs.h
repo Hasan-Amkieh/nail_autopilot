@@ -19,6 +19,9 @@
 #define MAX_ROLL_VTOL 20.0
 #define MAX_PITCH_VTOL 20.0
 #define MAX_YAW_VTOL 10.0
+#define MAX_ROLL_FW 20.0
+#define MAX_PITCH_FW 20.0
+#define MAX_YAW_FW 10.0
 #define I_LIMIT 15.0  // Integrator saturation level, mostly for safety (default 25.0)
 
 #define IBUS_BUFFSIZE 32    
@@ -31,8 +34,8 @@ IntervalTimer radioControllerTimer;
 void radioControllerRead();
 void processRadioController();
 
-PWMServo rightWing;
-PWMServo leftWing;
+PWMServo rightWingAil;
+PWMServo leftWingAil;
 PWMServo rightElevator;
 PWMServo leftElevator;
 
@@ -49,6 +52,7 @@ ranges between 0 and 180
 3 - last left
 */
 uint16_t motor_throttles[4] = {0};
+uint16_t control_surfaces[4] = {0}; // right aileron, left aileron, right elevator, left elevator
 
 /*
 ranges between 0 and 180
@@ -66,22 +70,40 @@ float dt = 0.0, current_time = 0.0, prev_time = 0.0;
 float error_roll = 0.0, integral_roll = 0.0, integral_roll_prev = 0.0, derivative_roll = 0.0, roll_PID = 0.0;
 float error_pitch = 0.0, integral_pitch = 0.0, integral_pitch_prev = 0.0, derivative_pitch = 0.0, pitch_PID = 0.0;
 
-float Kp_roll_angle = 0.2;    // Roll P-gain
-float Ki_roll_angle = 0.35;    // Roll I-gain
-float Kd_roll_angle = 0.05;   // Roll D-gain
+float Kp_roll_angle_VTOL = 0.0;    // Roll P-gain
+float Ki_roll_angle_VTOL = 0.0;    // Roll I-gain
+float Kd_roll_angle_VTOL = 0.0;   // Roll D-gain
 
-float Kp_pitch_angle = 0.2;   // Pitch P-gain
-float Ki_pitch_angle = 0.35;   // Pitch I-gain
-float Kd_pitch_angle = 0.05;  // Pitch D-gain
+float Kp_pitch_angle_VTOL = 0.0;   // Pitch P-gain
+float Ki_pitch_angle_VTOL = 0.0;   // Pitch I-gain
+float Kd_pitch_angle_VTOL = 0.0;  // Pitch D-gain
 
-float Kp_yaw = 0.0;           // Yaw P-gain
-float Ki_yaw = 0.0;          // Yaw I-gain
-float Kd_yaw = 0.0;       // Yaw D-gain
+float Kp_yaw_VTOL = 0.0;           // Yaw P-gain
+float Ki_yaw_VTOL = 0.0;          // Yaw I-gain
+float Kd_yaw_VTOL = 0.0;       // Yaw D-gain
 
 /*
-float Kp_yaw = 0.3;    
-float Ki_yaw = 0.05;   
-float Kd_yaw = 0.00015;
+float Kp_yaw_VTOL = 0.3;    
+float Ki_yaw_VTOL = 0.05;   
+float Kd_yaw_VTOL = 0.00015;
+*/
+
+float Kp_roll_angle_FW = 1490;    // Roll P-gain
+float Ki_roll_angle_FW = 0.0;    // Roll I-gain
+float Kd_roll_angle_FW = 0.0;   // Roll D-gain
+
+float Kp_pitch_angle_FW = 0.0;   // Pitch P-gain
+float Ki_pitch_angle_FW = 0.0;   // Pitch I-gain
+float Kd_pitch_angle_FW = 0.0;  // Pitch D-gain
+
+float Kp_yaw_FW = 0.0;           // Yaw P-gain
+float Ki_yaw_FW = 0.0;          // Yaw I-gain
+float Kd_yaw_FW = 0.0;       // Yaw D-gain
+
+/*
+float Kp_yaw_FW = 0.3;    
+float Ki_yaw_FW = 0.05;   
+float Kd_yaw_FW = 0.00015;
 */
 
 void commandMotors() {
@@ -92,30 +114,30 @@ void commandMotors() {
 }
 
 void commandSurfaceControls() {
-    rightWing.write(surface_controls[0]);
-    leftWing.write(surface_controls[1]);
+    rightWingAil.write(surface_controls[0]);
+    leftWingAil.write(surface_controls[1]);
     rightElevator.write(surface_controls[2]);
     leftElevator.write(surface_controls[3]);
 }
 
 void testAllServos() {
 
-    rightWing.write(DEFAULT_SERVO_POS + MAX_SURFACE_CONTROL_ANGLE);
-    leftWing.write(DEFAULT_SERVO_POS + MAX_SURFACE_CONTROL_ANGLE);
+    rightWingAil.write(DEFAULT_SERVO_POS + MAX_SURFACE_CONTROL_ANGLE);
+    leftWingAil.write(DEFAULT_SERVO_POS + MAX_SURFACE_CONTROL_ANGLE);
     rightElevator.write(DEFAULT_SERVO_POS + MAX_SURFACE_CONTROL_ANGLE);
     leftElevator.write(DEFAULT_SERVO_POS + MAX_SURFACE_CONTROL_ANGLE);
 
     delay(1500);
 
-    rightWing.write(DEFAULT_SERVO_POS - MAX_SURFACE_CONTROL_ANGLE);
-    leftWing.write(DEFAULT_SERVO_POS - MAX_SURFACE_CONTROL_ANGLE);
+    rightWingAil.write(DEFAULT_SERVO_POS - MAX_SURFACE_CONTROL_ANGLE);
+    leftWingAil.write(DEFAULT_SERVO_POS - MAX_SURFACE_CONTROL_ANGLE);
     rightElevator.write(DEFAULT_SERVO_POS - MAX_SURFACE_CONTROL_ANGLE);
     leftElevator.write(DEFAULT_SERVO_POS - MAX_SURFACE_CONTROL_ANGLE);
 
     delay(1500);
 
-    rightWing.write(DEFAULT_SERVO_POS);
-    leftWing.write(DEFAULT_SERVO_POS);
+    rightWingAil.write(DEFAULT_SERVO_POS);
+    leftWingAil.write(DEFAULT_SERVO_POS);
     rightElevator.write(DEFAULT_SERVO_POS);
     leftElevator.write(DEFAULT_SERVO_POS);
 
@@ -150,7 +172,7 @@ void controlAngleVTOL() {
   }
   integral_roll = constrain(integral_roll, -I_LIMIT, I_LIMIT); // Saturate integrator to prevent unsafe buildup
   derivative_roll = omega_roll;
-  roll_PID = 0.01 * (Kp_roll_angle * error_roll + Ki_roll_angle * integral_roll - Kd_roll_angle * derivative_roll); //Scaled by .01 to bring within -1 to 1 range
+  roll_PID = 0.01 * (Kp_roll_angle_VTOL * error_roll + Ki_roll_angle_VTOL * integral_roll - Kd_roll_angle_VTOL * derivative_roll); //Scaled by .01 to bring within -1 to 1 range
 
   //Pitch
   error_pitch = pitch_des - kalm_pitch;
@@ -160,7 +182,7 @@ void controlAngleVTOL() {
   }
   integral_pitch = constrain(integral_pitch, -I_LIMIT, I_LIMIT); // Saturate integrator to prevent unsafe buildup
   derivative_pitch = omega_pitch;
-  pitch_PID = .01 * (Kp_pitch_angle * error_pitch + Ki_pitch_angle * integral_pitch - Kd_pitch_angle * derivative_pitch); //Scaled by .01 to bring within -1 to 1 range
+  pitch_PID = .01 * (Kp_pitch_angle_VTOL * error_pitch + Ki_pitch_angle_VTOL * integral_pitch - Kd_pitch_angle_VTOL * derivative_pitch); //Scaled by .01 to bring within -1 to 1 range
 
   // Yaw, stablize on rate from GyroZ
   /*error_yaw = yaw_des - GyroZ;
@@ -208,10 +230,10 @@ void getDesStateFW() {
   yaw_passthru = yaw_des / 2.0; // Between -0.5 and 0.5
   
   //Constrain within normalized bounds
-  throttle_des = constrain(throttle_des, 0.0, 1.0); //Between 0 and 1
-  roll_des = constrain(roll_des, -1.0, 1.0) * MAX_ROLL_VTOL; //Between -maxRoll and +maxRoll
-  pitch_des = constrain(pitch_des, -1.0, 1.0) * MAX_PITCH_VTOL; //Between -maxPitch and +maxPitch
-  yaw_des = constrain(yaw_des, -1.0, 1.0) * MAX_YAW_VTOL; //Between -maxYaw and +maxYaw
+  throttle_des = constrain(throttle_des, 0.0, 1.0); // Between 0 and 1
+  roll_des = constrain(roll_des, -1.0, 1.0) * MAX_ROLL_FW; // Between -maxRoll and +maxRoll
+  pitch_des = constrain(pitch_des, -1.0, 1.0) * MAX_PITCH_FW; // Between -maxPitch and +maxPitch
+  yaw_des = constrain(yaw_des, -1.0, 1.0) * MAX_YAW_FW; // Between -maxYaw and +maxYaw
   roll_passthru = constrain(roll_passthru, -0.5, 0.5);
   pitch_passthru = constrain(pitch_passthru, -0.5, 0.5);
   yaw_passthru = constrain(yaw_passthru, -0.5, 0.5);
@@ -227,7 +249,7 @@ void controlAngleFW() {
   }
   integral_roll = constrain(integral_roll, -I_LIMIT, I_LIMIT); // Saturate integrator to prevent unsafe buildup
   derivative_roll = omega_roll;
-  roll_PID = 0.01 * (Kp_roll_angle * error_roll + Ki_roll_angle * integral_roll - Kd_roll_angle * derivative_roll); //Scaled by .01 to bring within -1 to 1 range
+  roll_PID = 0.01 * (Kp_roll_angle_FW * error_roll + Ki_roll_angle_FW * integral_roll - Kd_roll_angle_FW * derivative_roll); //Scaled by .01 to bring within -1 to 1 range
 
   //Pitch
   error_pitch = pitch_des - kalm_pitch;
@@ -237,7 +259,7 @@ void controlAngleFW() {
   }
   integral_pitch = constrain(integral_pitch, -I_LIMIT, I_LIMIT); // Saturate integrator to prevent unsafe buildup
   derivative_pitch = omega_pitch;
-  pitch_PID = .01 * (Kp_pitch_angle * error_pitch + Ki_pitch_angle * integral_pitch - Kd_pitch_angle * derivative_pitch); //Scaled by .01 to bring within -1 to 1 range
+  pitch_PID = .01 * (Kp_pitch_angle_FW * error_pitch + Ki_pitch_angle_FW * integral_pitch - Kd_pitch_angle_FW * derivative_pitch); //Scaled by .01 to bring within -1 to 1 range
 
   // Yaw, stablize on rate from GyroZ
   /*error_yaw = yaw_des - GyroZ;
@@ -247,7 +269,7 @@ void controlAngleFW() {
   }
   integral_yaw = constrain(integral_yaw, -I_LIMIT, I_LIMIT); // Saturate integrator to prevent unsafe buildup
   derivative_yaw = (error_yaw - error_yaw_prev)/dt; 
-  yaw_PID = .01*(Kp_yaw*error_yaw + Ki_yaw*integral_yaw + Kd_yaw*derivative_yaw); //Scaled by .01 to bring within -1 to 1 range
+  yaw_PID = .01*(Kp_yaw_FW*error_yaw + Ki_yaw_FW*integral_yaw + Kd_yaw_FW*derivative_yaw); //Scaled by .01 to bring within -1 to 1 range
   */
 
   //Update roll variables
@@ -260,17 +282,15 @@ void controlAngleFW() {
 }
 
 void controlMixerFW() {
-   
-  motor_throttles[2] = (throttle_des - pitch_PID + roll_PID) * 180; // first left
-  motor_throttles[0] = (throttle_des - pitch_PID - roll_PID) * 180; // first right
-  motor_throttles[1] = (throttle_des + pitch_PID - roll_PID) * 180; // last right
-  motor_throttles[3] = (throttle_des + pitch_PID + roll_PID) * 180; // last left
 
-  /*
-  m1_command_scaled = throttle_des - pitch_PID + roll_PID + yaw_PID; // first left
-  m2_command_scaled = throttle_des - pitch_PID - roll_PID - yaw_PID; // first right
-  m3_command_scaled = throttle_des + pitch_PID - roll_PID + yaw_PID; // last right
-  m4_command_scaled = throttle_des + pitch_PID + roll_PID - yaw_PID; // last left
-  */
- 
+  motor_throttles[0] = throttle_des * 180;
+  motor_throttles[1] = motor_throttles[0];
+  motor_throttles[2] = motor_throttles[0];
+  motor_throttles[3] = motor_throttles[0];
+   
+  surface_controls[0] = (+ roll_PID) * 180; // right aileron
+  surface_controls[1] = (- roll_PID) * 180; // left aileron
+  surface_controls[2] = (+ pitch_PID) * 180; // right elevator
+  surface_controls[3] = (- pitch_PID) * 180; // left elevator
+
 }

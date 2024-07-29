@@ -7,8 +7,11 @@
 #define BATTERY_VOLTAGE_MINIMUM 20.0 // which is equivalent to 3.3 volts per cell, around 15% remaining, as the stepper motor driver requires 20V minimum
 
 enum UAV_MODES {
-    idle, vtol, fixed_wing, failsafe
+    idle, vtol, fixed_wing, transitioning, failsafe
 };
+
+float transitionPercent = 0.0; // 0% for VTOL, 100% for fixed wing
+uint32_t stepsCounter = 0; // count the steps for transitioning
 
 const int failsafe_values[6] = {1009, 1002, 1001, 1016, 1000, 1000};
 UAV_MODES uav_mode = UAV_MODES::idle;
