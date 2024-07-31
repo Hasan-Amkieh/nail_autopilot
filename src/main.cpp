@@ -47,16 +47,20 @@
 #define STEPPER_MOTOR_PULSE_PIN 33
 #define STEPPER_MOTOR_DIR_PIN 31 // LOW to VTOL, HIGH to FW
 //#define STEPPER_MOTOR_EN_PIN 32 // unused, can be used for other stuff
+#define STEPPER_MOTOR_INTERVAL 200 // microseconds
+#define TO_VTOL_DIR LOW
+#define TO_FW_DIR HIGH
+#define FULL_TRANSITION_STEPS_COUNT 13500 // at 400 steps per revolution with DM556
 
 #define BOMB1_LOCK_SERVO_PIN 7
 #define BOMB2_LOCK_SERVO_PIN 6
 
-#define BOMB_LOCK_OPEN 1000
-#define BOMB_LOCK_CLOSED 2000
+#define BOMB_LOCK_OPEN 0.0
+#define BOMB_LOCK_CLOSED 1.0
 
 struct FeedbackPacket {
   char start = 'A';
-  uint8_t uav_mode = 0; // 0 - idle, 1 - vtol, 2 - fw, 3 - failsafe
+  uint8_t uav_mode = 0; // 0 - idle, 1 - vtol, 2 - fw, 3 - transitioning, 4 - failsafe
   uint8_t latBefore;
   char latAfter[6];
   uint8_t lngBefore;
@@ -95,8 +99,8 @@ TinyGPSPlus gps;
 double lat, lng;
 TinyGPSHDOP gpsPrecision;
 
-PWMServo bomb1Lock;
-PWMServo bomb2Lock;
+SignalGen bomb1Lock(BOMB1_LOCK_SERVO_PIN);
+SignalGen bomb2Lock(BOMB2_LOCK_SERVO_PIN);
 
 MechaQMC5883 qmc;
 
@@ -139,33 +143,33 @@ void setup() {
 
   FS_IA6_SERIAL.begin(115200);
 
-  rightFirstM.attach(RIGHT_FIRST_MOTOR_PIN, 1490, 2000); // 1500 - 10 (for safety)
-  rightLastM.attach(RIGHT_LAST_MOTOR_PIN, 1500, 2000); // 1500 - 10 (for safety)
-  leftFirstM.attach(LEFT_FIRST_MOTOR_PIN, 1495, 2000); // 1500 - 10 (for safety)
-  leftLastM.attach(LEFT_LAST_MOTOR_PIN, 1500, 2000); // 1500 - 10 (for safety)
+  rightFirstM.begin(50);
+  rightLastM.begin(50);
+  leftFirstM.begin(50);
+  leftLastM.begin(50);
 
-  rightFirstM.write(0);
-  rightLastM.write(0);
-  leftFirstM.write(0);
-  leftLastM.write(0);
+  rightFirstM.setDutyCycle(0.0);
+  rightLastM.setDutyCycle(0.0);
+  leftFirstM.setDutyCycle(0.0);
+  leftLastM.setDutyCycle(0.0);
 
-  rightWingAil.attach(RIGHT_WING_SERVO_PIN, 1000, 2000);
-  rightWingAil.write(DEFAULT_SERVO_POS);
+  rightWingAil.begin(50);
+  rightWingAil.setDutyCycle(DEFAULT_SERVO_POS_RA);
 
-  leftWingAil.attach(LEFT_WING_SERVO_PIN, 1000, 2000);
-  leftWingAil.write(DEFAULT_SERVO_POS);
+  leftWingAil.begin(50);
+  leftWingAil.setDutyCycle(DEFAULT_SERVO_POS_LA);
 
-  rightElevator.attach(RIGHT_ELEVATOR_SERVO_PIN, 1000, 2000);
-  rightElevator.write(DEFAULT_SERVO_POS);
+  rightElevator.begin(50);
+  rightElevator.setDutyCycle(DEFAULT_SERVO_POS_RE);
 
-  leftElevator.attach(LEFT_ELEVATOR_SERVO_PIN, 1000, 2000);
-  leftElevator.write(DEFAULT_SERVO_POS);
+  leftElevator.begin(50);
+  leftElevator.setDutyCycle(DEFAULT_SERVO_POS_LE);
 
-  bomb1Lock.attach(BOMB1_LOCK_SERVO_PIN, 1000, 2000);
-  bomb1Lock.write(BOMB_LOCK_OPEN);
+  bomb1Lock.begin(50);
+  bomb1Lock.setDutyCycle(BOMB_LOCK_OPEN);
 
-  bomb2Lock.attach(BOMB2_LOCK_SERVO_PIN, 1000, 2000);
-  bomb2Lock.write(BOMB_LOCK_OPEN);
+  bomb2Lock.begin(50);
+  bomb2Lock.setDutyCycle(BOMB_LOCK_OPEN);
 
   pinMode(BATTERY_VOLTAGE_PIN, INPUT);
 
@@ -417,30 +421,35 @@ void loop() {
   calculateRollPitch();
 
   if (uav_mode == UAV_MODES::idle) { // in idle mode, we use the 6 channels to test the controller and the surface control!
-    surface_controls[0] = DEFAULT_SERVO_POS + map((double)radioValues[0], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE;
-    surface_controls[1] = surface_controls[0];
-    surface_controls[2] = DEFAULT_SERVO_POS + map((double)radioValues[1], 1000, 2000, -1.0, 1.0) * MAX_SURFACE_CONTROL_ANGLE;
-    surface_controls[3] = surface_controls[2];
+    surface_controls[0] = DEFAULT_SERVO_POS_RA + map((double)radioValues[0], 1000, 2000, -1.0, 1.0) * MAX_AILERON_DUTY_R;
+    surface_controls[1] = DEFAULT_SERVO_POS_LA + map((double)radioValues[0], 1000, 2000, -1.0, 1.0) * MAX_AILERON_DUTY_L;
+    surface_controls[2] = DEFAULT_SERVO_POS_RE + map((double)radioValues[1], 1000, 2000, -1.0, 1.0) * MAX_ELEVATOR_DUTY_R;
+    surface_controls[3] = DEFAULT_SERVO_POS_LE + map((double)radioValues[1], 1000, 2000, -1.0, 1.0) * MAX_ELEVATOR_DUTY_L;
     commandSurfaceControls();
 
-    motor_throttles[0] = map(radioValues[2], 1000, 2000, 0, 180);
-    if (motor_throttles[0] > 36) { // equivalent to 20% throttle
-      motor_throttles[0] = 36;
+    motor_throttles[0] = map(radioValues[2], 1000, 2000, 0.0, 1.0);
+    if (motor_throttles[0] > 0.2) {
+      motor_throttles[0] = 0.2;
     }
     motor_throttles[1] = motor_throttles[0];
     motor_throttles[2] = motor_throttles[0];
     motor_throttles[3] = motor_throttles[0];
     commandMotors();
 
+    targetSteps = map(radioValues[4], 1000, 2000, 0, FULL_TRANSITION_STEPS_COUNT);
+    if (targetSteps != stepsCounter) {
+      startTransitioning();
+    }
+
     if (radioValues[5] == 1500) {
-      bomb1Lock.write(180);
-      bomb2Lock.write(0);
+      bomb1Lock.setDutyCycle(BOMB_LOCK_CLOSED);
+      bomb2Lock.setDutyCycle(BOMB_LOCK_OPEN);
     } else if (radioValues[5] == 2000) {
-      bomb1Lock.write(180);
-      bomb2Lock.write(180);
+      bomb1Lock.setDutyCycle(BOMB_LOCK_CLOSED);
+      bomb2Lock.setDutyCycle(BOMB_LOCK_CLOSED);
     } else {
-      bomb1Lock.write(0);
-      bomb2Lock.write(0);
+      bomb1Lock.setDutyCycle(BOMB_LOCK_OPEN);
+      bomb2Lock.setDutyCycle(BOMB_LOCK_OPEN);
     }
   } else if (uav_mode == UAV_MODES::vtol) {
     getDesStateVTOL();
@@ -470,7 +479,16 @@ void loop() {
       motor_throttles[3] = 0;
       commandMotors();
     } else if (prevMode == UAV_MODES::fixed_wing) {
-      ;
+      motor_throttles[0] = 0;
+      motor_throttles[1] = 0;
+      motor_throttles[2] = 0;
+      motor_throttles[3] = 0;
+      surface_controls[0] = MAX_AILERON_DUTY_R; // The ailerons has to be rolling to the right side
+      surface_controls[1] = -MAX_AILERON_DUTY_L;
+      surface_controls[2] = -MAX_ELEVATOR_DUTY_R; // The elevators has to gain altitude, acts as air brakes
+      surface_controls[3] = -MAX_ELEVATOR_DUTY_L;
+      commandMotors();
+      commandSurfaceControls();
     }
   }
 
@@ -516,7 +534,12 @@ void radioControllerRead() {
 
 // called when needed to move the stepper motor to start moving to the other mode
 void startTransitioning() {
-  transitionTimer.begin(transitionSwitch, 50);
+  if (targetSteps < stepsCounter) {
+    digitalWrite(STEPPER_MOTOR_DIR_PIN, TO_VTOL_DIR);
+  } else {
+    digitalWrite(STEPPER_MOTOR_DIR_PIN, TO_FW_DIR);
+  }
+  transitionTimer.begin(transitionSwitch, STEPPER_MOTOR_INTERVAL);
 }
 
 void stopTransitioning() {
@@ -528,6 +551,10 @@ void transitionSwitch() {
   static bool transitionPulseState = false;
   digitalWrite(STEPPER_MOTOR_PULSE_PIN, transitionPulseState);
   transitionPulseState = !transitionPulseState;
+  stepsCounter++;
+  if (stepsCounter == targetSteps) {
+    stopTransitioning();
+  }
 
 }
 
@@ -543,10 +570,10 @@ void processLora() {
   packet.lngBefore = (uint8_t)lng;
   doubleToDecimals(lat, packet.latAfter);
   doubleToDecimals(lng, packet.lngAfter);
-  packet.m1_throttle = map(motor_throttles[0], 0, 180, 0, 100);
-  packet.m2_throttle = map(motor_throttles[1], 0, 180, 0, 100);
-  packet.m3_throttle = map(motor_throttles[2], 0, 180, 0, 100);
-  packet.m4_throttle = map(motor_throttles[3], 0, 180, 0, 100);
+  packet.m1_throttle = (uint8_t)map(motor_throttles[0], 0.0, 1.0, 0, 100);
+  packet.m2_throttle = (uint8_t)map(motor_throttles[1], 0.0, 1.0, 0, 100);
+  packet.m3_throttle = (uint8_t)map(motor_throttles[2], 0.0, 1.0, 0, 100);
+  packet.m4_throttle = (uint8_t)map(motor_throttles[3], 0.0, 1.0, 0, 100);
   packet.batt_volt = batt_voltage;
   packet.roll = kalm_roll;
   packet.pitch = kalm_pitch;
@@ -572,11 +599,11 @@ void processLora() {
       Serial.println("Switching to VTOL in manual mode!");
     }
     if (buff[0] == '3' && isFlying()) {
-      bomb1Lock.write(180);
+      bomb1Lock.setDutyCycle(BOMB_LOCK_CLOSED);
       Serial.println("Dropping first bomb!");
     }
     if (buff[0] == '4' && isFlying()) {
-      bomb2Lock.write(180);
+      bomb2Lock.setDutyCycle(BOMB_LOCK_CLOSED);
       Serial.println("Dropping second bomb!");
     }
     if (buff[0] == '5' && isFlying()) {

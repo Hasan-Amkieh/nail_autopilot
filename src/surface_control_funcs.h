@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <PWMServo.h>
+#include <signal_generator.h>
 #include <imu_funcs.h>
 
 #define RIGHT_WING_SERVO_PIN 2
@@ -12,9 +12,15 @@
 #define LEFT_FIRST_MOTOR_PIN 23
 #define LEFT_LAST_MOTOR_PIN 22
 
-#define MAX_SURFACE_CONTROL_ANGLE 15
+#define MAX_ELEVATOR_DUTY_R 0.5 // equivalent to 90 degrees
+#define MAX_ELEVATOR_DUTY_L -0.5 // equivalent to 90 degrees
+#define MAX_AILERON_DUTY_R 0.5 // equivalent to 90 degrees
+#define MAX_AILERON_DUTY_L 0.5 // equivalent to 90 degrees
 
-#define DEFAULT_SERVO_POS 90
+#define DEFAULT_SERVO_POS_RA 0.5
+#define DEFAULT_SERVO_POS_LA 0.5
+#define DEFAULT_SERVO_POS_RE 1.28
+#define DEFAULT_SERVO_POS_LE 0.15
 
 #define MAX_ROLL_VTOL 20.0
 #define MAX_PITCH_VTOL 20.0
@@ -34,34 +40,33 @@ IntervalTimer radioControllerTimer;
 void radioControllerRead();
 void processRadioController();
 
-PWMServo rightWingAil;
-PWMServo leftWingAil;
-PWMServo rightElevator;
-PWMServo leftElevator;
+SignalGen rightWingAil(RIGHT_WING_SERVO_PIN);
+SignalGen leftWingAil(LEFT_WING_SERVO_PIN);
+SignalGen rightElevator(RIGHT_ELEVATOR_SERVO_PIN);
+SignalGen leftElevator(LEFT_ELEVATOR_SERVO_PIN);
 
-PWMServo rightFirstM;
-PWMServo rightLastM;
-PWMServo leftFirstM;
-PWMServo leftLastM;
+SignalGen rightFirstM(RIGHT_FIRST_MOTOR_PIN);
+SignalGen rightLastM(RIGHT_LAST_MOTOR_PIN);
+SignalGen leftFirstM(LEFT_FIRST_MOTOR_PIN);
+SignalGen leftLastM(LEFT_LAST_MOTOR_PIN);
 
 /*
-ranges between 0 and 180
+ranges between 0.0 and 1.0
 0 - first right
 1 - last right
 2 - first left
 3 - last left
 */
-uint16_t motor_throttles[4] = {0};
-uint16_t control_surfaces[4] = {0}; // right aileron, left aileron, right elevator, left elevator
+float motor_throttles[4] = {0};
 
 /*
-ranges between 0 and 180
+ranges between 0.0 and 1.0
 0 - right aileron
 1 - left aileron
 2 - right elevator
 3 - left elevator
 */
-uint16_t surface_controls[4] = {0};
+float surface_controls[4] = {0};
 
 float throttle_des = 0.0, roll_des = 0.0, pitch_des = 0.0, yaw_des = 0.0;
 float roll_passthru = 0.0, pitch_passthru = 0.0, yaw_passthru = 0.0;
@@ -107,39 +112,39 @@ float Kd_yaw_FW = 0.00015;
 */
 
 void commandMotors() {
-    rightFirstM.write(motor_throttles[0]);
-    rightLastM.write(motor_throttles[1]);
-    leftFirstM.write(motor_throttles[2]);
-    leftLastM.write(motor_throttles[3]);
+    rightFirstM.setDutyCycle(motor_throttles[0]);
+    rightLastM.setDutyCycle(motor_throttles[1]);
+    leftFirstM.setDutyCycle(motor_throttles[2]);
+    leftLastM.setDutyCycle(motor_throttles[3]);
 }
 
 void commandSurfaceControls() {
-    rightWingAil.write(surface_controls[0]);
-    leftWingAil.write(surface_controls[1]);
-    rightElevator.write(surface_controls[2]);
-    leftElevator.write(surface_controls[3]);
+    rightWingAil.setDutyCycle(surface_controls[0]);
+    leftWingAil.setDutyCycle(surface_controls[1]);
+    rightElevator.setDutyCycle(surface_controls[2]);
+    leftElevator.setDutyCycle(surface_controls[3]);
 }
 
 void testAllServos() {
 
-    rightWingAil.write(DEFAULT_SERVO_POS + MAX_SURFACE_CONTROL_ANGLE);
-    leftWingAil.write(DEFAULT_SERVO_POS + MAX_SURFACE_CONTROL_ANGLE);
-    rightElevator.write(DEFAULT_SERVO_POS + MAX_SURFACE_CONTROL_ANGLE);
-    leftElevator.write(DEFAULT_SERVO_POS + MAX_SURFACE_CONTROL_ANGLE);
+    rightWingAil.setDutyCycle(DEFAULT_SERVO_POS_RA + MAX_AILERON_DUTY_R);
+    leftWingAil.setDutyCycle(DEFAULT_SERVO_POS_LA + MAX_AILERON_DUTY_L);
+    rightElevator.setDutyCycle(DEFAULT_SERVO_POS_RE + MAX_ELEVATOR_DUTY_R);
+    leftElevator.setDutyCycle(DEFAULT_SERVO_POS_LE + MAX_ELEVATOR_DUTY_L);
 
-    delay(1500);
+    delay(1000);
 
-    rightWingAil.write(DEFAULT_SERVO_POS - MAX_SURFACE_CONTROL_ANGLE);
-    leftWingAil.write(DEFAULT_SERVO_POS - MAX_SURFACE_CONTROL_ANGLE);
-    rightElevator.write(DEFAULT_SERVO_POS - MAX_SURFACE_CONTROL_ANGLE);
-    leftElevator.write(DEFAULT_SERVO_POS - MAX_SURFACE_CONTROL_ANGLE);
+    rightWingAil.setDutyCycle(DEFAULT_SERVO_POS_RA - MAX_AILERON_DUTY_R);
+    leftWingAil.setDutyCycle(DEFAULT_SERVO_POS_LA - MAX_AILERON_DUTY_L);
+    rightElevator.setDutyCycle(DEFAULT_SERVO_POS_RE - MAX_ELEVATOR_DUTY_R);
+    leftElevator.setDutyCycle(DEFAULT_SERVO_POS_LE - MAX_ELEVATOR_DUTY_L);
 
-    delay(1500);
+    delay(1000);
 
-    rightWingAil.write(DEFAULT_SERVO_POS);
-    leftWingAil.write(DEFAULT_SERVO_POS);
-    rightElevator.write(DEFAULT_SERVO_POS);
-    leftElevator.write(DEFAULT_SERVO_POS);
+    rightWingAil.setDutyCycle(DEFAULT_SERVO_POS_RA);
+    leftWingAil.setDutyCycle(DEFAULT_SERVO_POS_LA);
+    rightElevator.setDutyCycle(DEFAULT_SERVO_POS_RE);
+    leftElevator.setDutyCycle(DEFAULT_SERVO_POS_LE);
 
 }
 

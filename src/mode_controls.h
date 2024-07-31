@@ -11,7 +11,7 @@ enum UAV_MODES {
 };
 
 float transitionPercent = 0.0; // 0% for VTOL, 100% for fixed wing
-uint32_t stepsCounter = 0; // count the steps for transitioning
+uint32_t stepsCounter = 0, targetSteps = 0; // count the steps for transitioning
 
 const int failsafe_values[6] = {1009, 1002, 1001, 1016, 1000, 1000};
 UAV_MODES uav_mode = UAV_MODES::idle;
